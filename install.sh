@@ -194,7 +194,7 @@ EOF
 }
 
 dispatch() {
-  local cmd="${1:-install}"
+  local cmd="${1:-help}"
   shift || true
   case "$cmd" in
     install) install_all "$@" ;;
