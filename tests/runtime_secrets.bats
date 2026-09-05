@@ -6,51 +6,22 @@ setup() {
   CREDENTIALS="$REPO_ROOT/lib/credentials.sh"
   HEALTH="$REPO_ROOT/lib/healthcheck.sh"
   VERIFIED="$REPO_ROOT/lib/verified_credentials.sh"
-  NATIVE="$REPO_ROOT/lib/wazuh_native_credentials.sh"
+  STOCK="$REPO_ROOT/lib/wazuh_native_credentials.sh"
 }
 
-@test "installer collects user-facing runtime credentials interactively" {
-  run grep -F 'collect_runtime_credentials' "$INSTALL"
-  [ "$status" -eq 0 ]
-  run grep -F 'Wazuh dashboard admin password' "$CREDENTIALS"
-  [ "$status" -eq 0 ]
-  run grep -F 'Shuffle UI admin password' "$CREDENTIALS"
-  [ "$status" -eq 0 ]
-}
-
-@test "password fields show mask characters while usernames remain visible" {
-  run grep -F 'read_password_masked' "$CREDENTIALS"
-  [ "$status" -eq 0 ]
-  run grep -F "printf '*' >/dev/tty" "$CREDENTIALS"
-  [ "$status" -eq 0 ]
-  run grep -F 'IFS= read -r -p "Shuffle admin username/email' "$CREDENTIALS"
-  [ "$status" -eq 0 ]
-  run grep -F 'IFS= read -r -s -p "Shuffle admin username/email' "$CREDENTIALS"
+@test "installer performs no interactive password collection" {
+  run grep -R -E 'read_password_masked|prompt_password_with_policy|Wazuh dashboard admin password|Shuffle UI admin password' "$CREDENTIALS" "$INSTALL"
   [ "$status" -ne 0 ]
-}
-
-@test "Wazuh policy follows native indexer tool special-character contract" {
-  run bash -c 'source "$1"; wazuh_password_policy_ok "Valid1.x"' _ "$CREDENTIALS"
-  [ "$status" -eq 0 ]
-  run bash -c 'source "$1"; wazuh_password_policy_ok "Valid1!x"' _ "$CREDENTIALS"
+  run grep -R -F '/dev/tty' "$CREDENTIALS" "$INSTALL"
   [ "$status" -ne 0 ]
-  run grep -F 'one of . * + ? - (Wazuh native tool policy)' "$CREDENTIALS"
+  run grep -F 'No password or username prompts will be shown.' "$CREDENTIALS"
   [ "$status" -eq 0 ]
 }
 
-@test "Shuffle password policy still accepts exclamation mark" {
-  run bash -c 'source "$1"; shuffle_password_policy_ok "Valid1!x"' _ "$CREDENTIALS"
+@test "browser URLs are selected automatically" {
+  run grep -F 'WAZUH_DASHBOARD_BROWSER_URL="https://localhost:${WAZUH_DASHBOARD_PORT}"' "$CREDENTIALS"
   [ "$status" -eq 0 ]
-}
-
-@test "browser URLs are confirmed interactively and remain visible" {
-  run grep -F 'collect_browser_urls' "$INSTALL"
-  [ "$status" -eq 0 ]
-  run grep -F 'prompt_browser_url "Wazuh dashboard URL"' "$CREDENTIALS"
-  [ "$status" -eq 0 ]
-  run grep -F 'prompt_browser_url "Shuffle URL"' "$CREDENTIALS"
-  [ "$status" -eq 0 ]
-  run grep -F 'IFS= read -r -p "$label [$default]: " value' "$CREDENTIALS"
+  run grep -F 'SHUFFLE_BROWSER_URL="${SHUFFLE_DETECTED_URL:-http://localhost:${SHUFFLE_FRONTEND_PORT}}"' "$CREDENTIALS"
   [ "$status" -eq 0 ]
 }
 
@@ -61,7 +32,7 @@ setup() {
   [ "$status" -eq 0 ]
 }
 
-@test "credential inventory is written only after live credential verification" {
+@test "credential inventory is written only after live verification" {
   verify_line="$(grep -nF 'verify_live_user_credentials' "$INSTALL" | tail -1 | cut -d: -f1)"
   write_line="$(grep -nF 'write_credentials_file' "$INSTALL" | tail -1 | cut -d: -f1)"
   [ -n "$verify_line" ]
@@ -69,39 +40,39 @@ setup() {
   [ "$verify_line" -lt "$write_line" ]
 }
 
-@test "failed stored-credential healthcheck removes the inventory" {
+@test "failed stored-default healthcheck removes credential inventory" {
   run grep -F 'rm -f "$STATE_DIR/credentials.txt"' "$INSTALL"
   [ "$status" -eq 0 ]
 }
 
-@test "project contains no upstream default dashboard password literal" {
+@test "repository does not publish a literal Wazuh default password" {
   run grep -R -F 'SecretPassword' "$INSTALL" "$REPO_ROOT/lib"
   [ "$status" -ne 0 ]
 }
 
-@test "bootstrap credentials are held in memory and cleared after rotation" {
-  run grep -F 'WAZUH_BOOTSTRAP_ADMIN_PASSWORD' "$NATIVE"
+@test "Wazuh defaults are captured and not generated" {
+  run grep -F 'capture_wazuh_stock_credentials' "$STOCK"
   [ "$status" -eq 0 ]
-  run grep -F 'unset WAZUH_BOOTSTRAP_ADMIN_PASSWORD' "$NATIVE"
-  [ "$status" -eq 0 ]
+  run grep -R -E 'generate_wazuh_password|openssl rand.*WAZUH.*PASSWORD' "$CREDENTIALS" "$STOCK" "$INSTALL"
+  [ "$status" -ne 0 ]
 }
 
-@test "Wazuh credential verifier tests the actual dashboard login endpoint" {
+@test "Wazuh verifier tests actual dashboard login endpoint" {
   run grep -F '/auth/login?dataSourceId=' "$VERIFIED"
   [ "$status" -eq 0 ]
-  run grep -F 'Wazuh dashboard UI login authenticated successfully' "$VERIFIED"
+  run grep -F 'Stock Wazuh dashboard UI login authenticated successfully' "$VERIFIED"
   [ "$status" -eq 0 ]
 }
 
-@test "Shuffle does not trust default UI bootstrap credentials" {
-  run grep -F 'SHUFFLE_DEFAULT_USERNAME" ""' "$VERIFIED"
+@test "Shuffle preserves upstream first-run UI behavior" {
+  run grep -F 'capture_shuffle_stock_credentials' "$VERIFIED"
   [ "$status" -eq 0 ]
-  run grep -F 'SHUFFLE_DEFAULT_PASSWORD" ""' "$VERIFIED"
+  run grep -F 'Shuffle upstream defines no default UI username/password' "$VERIFIED"
   [ "$status" -eq 0 ]
-  run grep -F '/api/v1/users/register' "$VERIFIED"
-  [ "$status" -eq 0 ]
-  run grep -F '/api/v1/users/login' "$VERIFIED"
-  [ "$status" -eq 0 ]
+  run grep -R -F '/api/v1/users/register' "$VERIFIED"
+  [ "$status" -ne 0 ]
+  run grep -R -F 'SHUFFLE_DEFAULT_PASSWORD" ""' "$VERIFIED"
+  [ "$status" -ne 0 ]
 }
 
 @test "healthcheck verifies stored Wazuh credentials without printing them" {
