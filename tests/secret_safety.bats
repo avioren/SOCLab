@@ -9,7 +9,16 @@ setup() {
   [ "$status" -eq 0 ]
 }
 
-@test "repository does not publish a literal Wazuh dashboard password" {
-  run grep -RE 'WAZUH_DASHBOARD_PASSWORD[^=]*=[A-Za-z0-9]' "$REPO_ROOT/install.sh" "$REPO_ROOT/lib"
+@test "repository does not publish the obsolete Wazuh 4.x Docker default" {
+  run grep -R -F 'SecretPassword' "$REPO_ROOT/install.sh" "$REPO_ROOT/lib"
   [ "$status" -ne 0 ]
+}
+
+@test "generated Shuffle secrets are written by variable reference only" {
+  run grep -F 'SHUFFLE_UI_PASSWORD=${shuffle_pw}' "$REPO_ROOT/lib/shuffle.sh"
+  [ "$status" -eq 0 ]
+  run grep -F 'SHUFFLE_API_KEY=${api_key}' "$REPO_ROOT/lib/shuffle.sh"
+  [ "$status" -eq 0 ]
+  run grep -F 'SHUFFLE_OPENSEARCH_PASSWORD=${shuffle_pw}' "$REPO_ROOT/lib/shuffle.sh"
+  [ "$status" -eq 0 ]
 }
