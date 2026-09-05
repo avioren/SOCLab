@@ -18,12 +18,25 @@ setup() {
   [ "$status" -eq 0 ]
 }
 
-@test "browser URLs are confirmed interactively" {
+@test "password fields show mask characters while usernames remain visible" {
+  run grep -F 'read_password_masked' "$CREDENTIALS"
+  [ "$status" -eq 0 ]
+  run grep -F "printf '*' >/dev/tty" "$CREDENTIALS"
+  [ "$status" -eq 0 ]
+  run grep -F 'IFS= read -r -p "Shuffle admin username/email' "$CREDENTIALS"
+  [ "$status" -eq 0 ]
+  run grep -F 'IFS= read -r -s -p "Shuffle admin username/email' "$CREDENTIALS"
+  [ "$status" -ne 0 ]
+}
+
+@test "browser URLs are confirmed interactively and remain visible" {
   run grep -F 'collect_browser_urls' "$INSTALL"
   [ "$status" -eq 0 ]
   run grep -F 'prompt_browser_url "Wazuh dashboard URL"' "$CREDENTIALS"
   [ "$status" -eq 0 ]
   run grep -F 'prompt_browser_url "Shuffle URL"' "$CREDENTIALS"
+  [ "$status" -eq 0 ]
+  run grep -F 'IFS= read -r -p "$label [$default]: " value' "$CREDENTIALS"
   [ "$status" -eq 0 ]
 }
 
