@@ -13,7 +13,39 @@ chmod +x install.sh
 sudo ./install.sh install
 ```
 
-The installer performs a clean lab reset, clones the `v5.0.0-beta5` Wazuh Docker repository, pulls the beta5 images, discovers the service UID/GID from those exact images, generates fresh TLS certificates, preflights all certificate mounts, starts Wazuh, verifies its endpoints, and then installs Shuffle.
+The installer performs a clean lab reset, clones the `v5.0.0-beta5` Wazuh Docker repository, pulls the beta5 images, discovers the service UID/GID from those exact images, generates fresh TLS certificates, preflights all certificate mounts, starts Wazuh, verifies its endpoints and real UI login, installs Shuffle, creates the first Shuffle admin through Shuffle's API, verifies that login, and only then writes the local credential inventory.
+
+## What the installer asks you for
+
+At the start of installation it asks for the user-facing accounts you will really use:
+
+- Wazuh dashboard `admin` password.
+- Shuffle administrator username/email.
+- Shuffle administrator UI password.
+
+Password input is not echoed. Internal service credentials (`kibanaserver`, `wazuh-wui`, Shuffle OpenSearch, and encryption material) are generated locally and are never published to Git.
+
+After Wazuh and Shuffle are running, the installer shows the detected browser endpoints and asks you to confirm or override:
+
+- Wazuh dashboard URL.
+- Shuffle URL.
+
+Use the localhost defaults when you browse from the same Windows/WSL workstation. If you normally browse through another hostname or IP, enter that value instead. The exact confirmed values are what get written to `credentials.txt`.
+
+## Credential verification contract
+
+The credential inventory is an output of a successful installation, not a source of guessed defaults.
+
+Before `credentials.txt` is created, the installer verifies:
+
+1. Wazuh `admin` authenticates directly to the indexer.
+2. Wazuh `wazuh-wui` authenticates to the server API.
+3. The same Wazuh `admin` credential succeeds through the actual dashboard `/auth/login` endpoint.
+4. Shuffle's first admin is registered using the username/password you supplied.
+5. The Shuffle username/password then succeeds against Shuffle's login API.
+6. Both stacks pass the final service healthcheck.
+
+If the final stored-credential healthcheck fails, the installer deletes `credentials.txt` rather than leaving a file containing values that were not verified.
 
 ## Runtime locations
 
@@ -22,28 +54,6 @@ The installer performs a clean lab reset, clones the `v5.0.0-beta5` Wazuh Docker
 - Credentials: `/opt/soclab/state/credentials.txt`
 - Installer logs: `/tmp/soclab-full-clean-beta5-*.log`
 
-Secrets and runtime state are not committed to Git.
+The credential file is created with mode `600` and is owned by the user who invoked `sudo` when possible. It is outside this Git repository. `.gitignore` also blocks `credentials.txt`, `.env`, PEM files, and private-key files if any are accidentally copied into the project checkout.
 
-## Runtime credentials
-
-The installer does not ship or publish working passwords. Before deleting the previous lab, `sudo ./install.sh install` securely prompts for:
-
-- Wazuh `admin` / dashboard and indexer password.
-- Wazuh `kibanaserver` service password.
-- Wazuh API `wazuh-wui` password.
-- Shuffle administrator username/email and UI password.
-- Shuffle OpenSearch administrator password.
-- Shuffle API key (user-supplied or generated when Enter is pressed).
-- Shuffle encryption modifier (user-supplied or generated when Enter is pressed).
-
-Password input is not echoed. Wazuh passwords are validated against the Wazuh 5 password rules before installation proceeds.
-
-After the clean reset, the values are recorded only on the lab host at:
-
-```text
-/opt/soclab/state/credentials.txt
-```
-
-The file is created with mode `600` and is owned by the user who invoked `sudo` when possible. It is outside this Git repository. `.gitignore` also blocks `credentials.txt`, `.env`, PEM files, and private-key files if any are accidentally copied into the project checkout.
-
-The runtime Wazuh and Shuffle `.env`/configuration files under `/opt/soclab` are also local-only. `docker compose config --quiet` is used so interpolated secrets are not rendered into temporary Compose output files.
+The runtime Wazuh and Shuffle `.env`/configuration files under `/opt/soclab` are local-only. `docker compose config --quiet` is used so interpolated secrets are not rendered into temporary Compose output files.
