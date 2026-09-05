@@ -102,9 +102,37 @@ verify_wazuh_cert_mounts() {
 }
 
 generate_wazuh_password_hash() {
-  local password="$1" hash
-  hash="$(printf '%s\n' "$password" | docker run --rm -i --entrypoint bash "wazuh/wazuh-indexer:${WAZUH_VERSION}" -lc 'set -e; tool="$(find /usr/share/wazuh-indexer -type f -path "*/opensearch-security/tools/hash.sh" -print -quit)"; [ -n "$tool" ] || exit 9; bash "$tool" 2>/dev/null' | grep -E '\$2[aby]\$' | tail -1)"
-  [[ "$hash" =~ ^\$2[aby]\$ ]] || die "Unable to generate Wazuh bcrypt password hash."
+  local password="$1" output hash
+
+  # Do not place the plaintext password in the host-side docker command line.
+  # Feed it on stdin, then invoke OpenSearch Security's supported non-interactive
+  # hash.sh -p form inside the disposable beta5 indexer container.
+  if ! output="$(
+    printf '%s\n' "$password" |
+      docker run --rm -i --entrypoint bash "wazuh/wazuh-indexer:${WAZUH_VERSION}" -lc '
+        set -euo pipefail
+        export JAVA_HOME=/usr/share/wazuh-indexer/jdk
+        export PATH="$JAVA_HOME/bin:$PATH"
+        tool=/usr/share/wazuh-indexer/plugins/opensearch-security/tools/hash.sh
+        if [ ! -f "$tool" ]; then
+          tool="$(find /usr/share/wazuh-indexer -type f -path "*/opensearch-security/tools/hash.sh" -print -quit)"
+        fi
+        [ -n "$tool" ] && [ -f "$tool" ] || exit 91
+        IFS= read -r password
+        bash "$tool" -p "$password"
+      ' 2>/dev/null
+  )"; then
+    warn "Wazuh beta5 password hashing failed inside the indexer image. The plaintext password was not logged." >&2
+    warn "Expected bundled JDK: /usr/share/wazuh-indexer/jdk; expected hash tool: plugins/opensearch-security/tools/hash.sh" >&2
+    return 1
+  fi
+
+  hash="$(printf '%s\n' "$output" | grep -E '^\$2[aby]\$[0-9]{2}\$' | tail -1 || true)"
+  if [[ ! "$hash" =~ ^\$2[aby]\$ ]]; then
+    warn "Wazuh beta5 hash tool completed but no bcrypt hash was found in its output. Secret output was not logged." >&2
+    return 1
+  fi
+
   printf '%s' "$hash"
 }
 
@@ -129,8 +157,26 @@ PY
 configure_wazuh_runtime_credentials() {
   phase "CONFIGURE WAZUH RUNTIME CREDENTIALS"
   local admin_hash dashboard_hash env_file compose dashboard_cfg
-  admin_hash="$(generate_wazuh_password_hash "$WAZUH_ADMIN_PASSWORD")"; dashboard_hash="$(generate_wazuh_password_hash "$WAZUH_DASHBOARD_SERVICE_PASSWORD")"
-  patch_internal_user_hash "$WAZUH_ADMIN_USER" "$admin_hash"; patch_internal_user_hash "$WAZUH_DASHBOARD_SERVICE_USER" "$dashboard_hash"; unset admin_hash dashboard_hash
+
+  log "Generating bcrypt hash for Wazuh admin using the beta5 indexer image"
+  if ! admin_hash="$(generate_wazuh_password_hash "$WAZUH_ADMIN_PASSWORD")"; then
+    die "Unable to generate the Wazuh admin password hash."
+  fi
+  ok "Wazuh admin bcrypt hash generated"
+
+  log "Generating bcrypt hash for the Wazuh dashboard service account"
+  if ! dashboard_hash="$(generate_wazuh_password_hash "$WAZUH_DASHBOARD_SERVICE_PASSWORD")"; then
+    unset admin_hash
+    die "Unable to generate the Wazuh dashboard service-account password hash."
+  fi
+  ok "Wazuh dashboard service-account bcrypt hash generated"
+
+  log "Patching Wazuh internal user hashes"
+  patch_internal_user_hash "$WAZUH_ADMIN_USER" "$admin_hash"
+  patch_internal_user_hash "$WAZUH_DASHBOARD_SERVICE_USER" "$dashboard_hash"
+  unset admin_hash dashboard_hash
+  ok "Wazuh internal user hashes patched"
+
   env_file="$WAZUH_SINGLE/.env"
   cat >"$env_file" <<EOF
 WAZUH_ADMIN_PASSWORD=${WAZUH_ADMIN_PASSWORD}
