@@ -31,7 +31,7 @@ WAZUH_DASHBOARD_SERVICE_PASSWORD=""
 WAZUH_API_USER="wazuh-wui"
 WAZUH_API_PASSWORD=""
 WAZUH_DASHBOARD_BROWSER_URL=""
-SHUFFLE_ADMIN_USERNAME="admin@soclab.local"
+SHUFFLE_ADMIN_USERNAME=""
 SHUFFLE_ADMIN_PASSWORD=""
 SHUFFLE_OPENSEARCH_PASSWORD=""
 SHUFFLE_API_KEY=""
@@ -107,14 +107,14 @@ install_all() {
   log "Pulling/verifying Wazuh ${WAZUH_VERSION} images"
   (cd "$WAZUH_SINGLE" && docker compose pull)
 
-  capture_wazuh_bootstrap_credentials
+  capture_wazuh_stock_credentials
   detect_wazuh_image_accounts
   generate_wazuh_certs_locally
   verify_wazuh_cert_mounts
 
-  phase "PHASE 4/7 - START STOCK WAZUH AND ROTATE CREDENTIALS"
+  phase "PHASE 4/7 - START STOCK WAZUH ${WAZUH_VERSION}"
 
-  log "Starting stock Wazuh beta5 for controlled credential bootstrap"
+  log "Starting Wazuh with the upstream default credentials unchanged"
   if ! (cd "$WAZUH_SINGLE" && docker compose up -d --remove-orphans); then
     dump_wazuh_diagnostics
     die "docker compose up failed for Wazuh."
@@ -162,23 +162,18 @@ install_all() {
     *) dump_wazuh_diagnostics; die "Wazuh API listener failed (HTTP ${code:-none})." ;;
   esac
 
-  # Important: do not patch internal_users.yml. Start the vendor stack first,
-  # then rotate through Wazuh's native password tool and REST API.
-  rotate_wazuh_runtime_credentials
   verify_runtime_credentials
-  ok "WAZUH ${WAZUH_VERSION} PASSED ALL HEALTH AND AUTHENTICATION GATES"
+  ok "WAZUH ${WAZUH_VERSION} PASSED ALL HEALTH AND DEFAULT-CREDENTIAL GATES"
 
   install_shuffle
   collect_browser_urls
   final_health
   verify_live_user_credentials
 
-  # The local credential inventory is deliberately the final artifact. It is
-  # never written with guessed/default values before authentication succeeds.
   write_credentials_file
   if ! healthcheck_all; then
     rm -f "$STATE_DIR/credentials.txt"
-    die "Stored-credential verification failed; credential inventory was removed rather than leaving incorrect values."
+    die "Stored-default credential verification failed; credential inventory was removed rather than leaving incorrect values."
   fi
 
   print_report
@@ -189,7 +184,7 @@ usage() {
 Usage: sudo ./install.sh <command>
 
 Commands:
-  install       Full clean install of Wazuh ${WAZUH_VERSION} + Shuffle; prompts for UI credentials and URLs
+  install       Full clean non-interactive install of Wazuh ${WAZUH_VERSION} + Shuffle using upstream/default credentials unchanged
   healthcheck   Run reusable end-to-end healthcheck
   verify        Run the full local integration verification (alias of healthcheck)
   status        Show Docker Compose status and lab URLs
