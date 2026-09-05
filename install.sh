@@ -59,6 +59,8 @@ source "$SCRIPT_DIR/lib/credentials.sh"
 source "$SCRIPT_DIR/lib/common.sh"
 # shellcheck source=lib/wazuh.sh
 source "$SCRIPT_DIR/lib/wazuh.sh"
+# shellcheck source=lib/wazuh_native_credentials.sh
+source "$SCRIPT_DIR/lib/wazuh_native_credentials.sh"
 # shellcheck source=lib/shuffle.sh
 source "$SCRIPT_DIR/lib/shuffle.sh"
 # shellcheck source=lib/healthcheck.sh
@@ -99,20 +101,20 @@ install_all() {
 
   patch_wazuh_dashboard_port
 
-  log "Validating Wazuh Compose configuration"
+  log "Validating stock Wazuh Compose configuration"
   (cd "$WAZUH_SINGLE" && docker compose config --quiet)
 
   log "Pulling/verifying Wazuh ${WAZUH_VERSION} images"
   (cd "$WAZUH_SINGLE" && docker compose pull)
 
+  capture_wazuh_bootstrap_credentials
   detect_wazuh_image_accounts
   generate_wazuh_certs_locally
-  configure_wazuh_runtime_credentials
   verify_wazuh_cert_mounts
 
-  phase "PHASE 4/7 - START AND VERIFY WAZUH ${WAZUH_VERSION}"
+  phase "PHASE 4/7 - START STOCK WAZUH AND ROTATE CREDENTIALS"
 
-  log "Starting Wazuh"
+  log "Starting stock Wazuh beta5 for controlled credential bootstrap"
   if ! (cd "$WAZUH_SINGLE" && docker compose up -d --remove-orphans); then
     dump_wazuh_diagnostics
     die "docker compose up failed for Wazuh."
@@ -160,8 +162,11 @@ install_all() {
     *) dump_wazuh_diagnostics; die "Wazuh API listener failed (HTTP ${code:-none})." ;;
   esac
 
+  # Important: do not patch internal_users.yml. Start the vendor stack first,
+  # then rotate through Wazuh's native password tool and REST API.
+  rotate_wazuh_runtime_credentials
   verify_runtime_credentials
-  ok "WAZUH ${WAZUH_VERSION} PASSED ALL HEALTH GATES"
+  ok "WAZUH ${WAZUH_VERSION} PASSED ALL HEALTH AND AUTHENTICATION GATES"
 
   install_shuffle
   collect_browser_urls
