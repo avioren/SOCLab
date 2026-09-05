@@ -14,7 +14,7 @@ setup() {
 }
 
 @test "installer does not invoke Wazuh credential mutation or discovery" {
-  run grep -R -E 'capture_wazuh_stock_credentials|configure_wazuh_runtime_credentials|rotate_wazuh_runtime_credentials|verify_runtime_credentials|verify_live_user_credentials|wazuh-passwords-tool\.sh|internal_users\.yml|API_PASSWORD' "$INSTALL"
+  run grep -R -E 'capture_wazuh_stock_credentials|configure_wazuh_runtime_credentials|rotate_wazuh_runtime_credentials|verify_runtime_credentials|verify_live_user_credentials|wazuh-passwords-tool\.sh|internal_users\.yml' "$INSTALL"
   [ "$status" -ne 0 ]
 }
 
@@ -25,15 +25,32 @@ setup() {
   [ "$status" -eq 0 ]
 }
 
-@test "repository does not publish the literal Wazuh default password" {
-  run grep -R -F 'SecretPassword' "$INSTALL" "$REPO_ROOT/lib"
-  [ "$status" -ne 0 ]
+@test "credential inventory uses Wazuh 5 beta dashboard and indexer defaults" {
+  run grep -F 'WAZUH_DASHBOARD_USERNAME=admin' "$SHUFFLE"
+  [ "$status" -eq 0 ]
+  run grep -F 'WAZUH_DASHBOARD_PASSWORD=admin' "$SHUFFLE"
+  [ "$status" -eq 0 ]
+  run grep -F 'WAZUH_INDEXER_USERNAME=admin' "$SHUFFLE"
+  [ "$status" -eq 0 ]
+  run grep -F 'WAZUH_INDEXER_PASSWORD=admin' "$SHUFFLE"
+  [ "$status" -eq 0 ]
 }
 
-@test "v3 runtime inventory records the Wazuh default without changing it" {
-  run grep -F "printf -v wazuh_default_password '%s%s' 'Secret' 'Password'" "$SHUFFLE"
+@test "credential inventory records Wazuh API defaults" {
+  run grep -F 'WAZUH_API_USERNAME=wazuh' "$SHUFFLE"
   [ "$status" -eq 0 ]
-  run grep -F 'WAZUH_DASHBOARD_PASSWORD_DEFAULT=${wazuh_default_password}' "$SHUFFLE"
+  run grep -F 'WAZUH_API_PASSWORD=wazuh' "$SHUFFLE"
+  [ "$status" -eq 0 ]
+  run grep -F 'WAZUH_WUI_API_USERNAME=wazuh-wui' "$SHUFFLE"
+  [ "$status" -eq 0 ]
+  run grep -F 'WAZUH_WUI_API_PASSWORD=wazuh-wui' "$SHUFFLE"
+  [ "$status" -eq 0 ]
+}
+
+@test "credential inventory records dashboard service account" {
+  run grep -F 'WAZUH_DASHBOARD_SERVICE_USERNAME=kibanaserver' "$SHUFFLE"
+  [ "$status" -eq 0 ]
+  run grep -F 'WAZUH_DASHBOARD_SERVICE_PASSWORD=kibanaserver' "$SHUFFLE"
   [ "$status" -eq 0 ]
 }
 
@@ -43,6 +60,12 @@ setup() {
   run grep -F 'SHUFFLE_DEFAULT_USERNAME" "admin@soclab.local"' "$SHUFFLE"
   [ "$status" -eq 0 ]
   run grep -F 'SHUFFLE_DEFAULT_PASSWORD" "$shuffle_pw"' "$SHUFFLE"
+  [ "$status" -eq 0 ]
+  run grep -F 'SHUFFLE_UI_USERNAME=admin@soclab.local' "$SHUFFLE"
+  [ "$status" -eq 0 ]
+  run grep -F 'SHUFFLE_UI_PASSWORD=${shuffle_pw}' "$SHUFFLE"
+  [ "$status" -eq 0 ]
+  run grep -F 'SHUFFLE_UPSTREAM_UI_DEFAULT_ACCOUNT=none' "$SHUFFLE"
   [ "$status" -eq 0 ]
 }
 
