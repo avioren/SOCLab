@@ -4,6 +4,7 @@ setup() {
   REPO_ROOT="$(cd "$BATS_TEST_DIRNAME/.." && pwd)"
   INSTALL="$REPO_ROOT/install.sh"
   WAZUH="$REPO_ROOT/lib/wazuh.sh"
+  NATIVE="$REPO_ROOT/lib/wazuh_native_credentials.sh"
 }
 
 @test "installer is valid bash" {
@@ -40,24 +41,32 @@ setup() {
   [ "$status" -eq 0 ]
 }
 
-@test "Wazuh beta5 password hashing uses bundled JDK and supported hash argument" {
-  run grep -F 'export JAVA_HOME=/usr/share/wazuh-indexer/jdk' "$WAZUH"
+@test "installer starts stock Wazuh before native credential rotation" {
+  start_line="$(grep -nF 'docker compose up -d --remove-orphans' "$INSTALL" | head -1 | cut -d: -f1)"
+  rotate_line="$(grep -nF 'rotate_wazuh_runtime_credentials' "$INSTALL" | tail -1 | cut -d: -f1)"
+  [ -n "$start_line" ]
+  [ -n "$rotate_line" ]
+  [ "$start_line" -lt "$rotate_line" ]
+}
+
+@test "native credential module uses Wazuh password tool and REST API" {
+  run grep -F 'wazuh-passwords-tool.sh' "$NATIVE"
   [ "$status" -eq 0 ]
-  run grep -F 'bash "$tool" -p "$password"' "$WAZUH"
+  run grep -F '/security/users/${user_id}' "$NATIVE"
   [ "$status" -eq 0 ]
 }
 
-@test "plaintext Wazuh password is fed to disposable hash container on stdin" {
-  run grep -F 'printf '\''%s\n'\'' "$password" |' "$WAZUH"
-  [ "$status" -eq 0 ]
-  run grep -F 'docker run --rm -i --entrypoint bash' "$WAZUH"
-  [ "$status" -eq 0 ]
+@test "native credential path does not patch internal_users.yml" {
+  run grep -R -F 'patch_internal_user_hash' "$INSTALL" "$NATIVE"
+  [ "$status" -ne 0 ]
+  run grep -R -F 'internal_users.yml' "$NATIVE"
+  [ "$status" -ne 0 ]
 }
 
-@test "Wazuh hash failures emit sanitized actionable diagnostics" {
-  run grep -F 'The plaintext password was not logged.' "$WAZUH"
+@test "stock bootstrap credentials are discovered at runtime and not hardcoded" {
+  run grep -F 'docker compose config --format json' "$NATIVE"
   [ "$status" -eq 0 ]
-  run grep -F 'no bcrypt hash was found in its output' "$WAZUH"
+  run grep -F 'Stock beta5 bootstrap credentials discovered in memory' "$NATIVE"
   [ "$status" -eq 0 ]
 }
 
