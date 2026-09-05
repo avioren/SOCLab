@@ -4,7 +4,7 @@ setup() {
   REPO_ROOT="$(cd "$BATS_TEST_DIRNAME/.." && pwd)"
   INSTALL="$REPO_ROOT/install.sh"
   WAZUH="$REPO_ROOT/lib/wazuh.sh"
-  NATIVE="$REPO_ROOT/lib/wazuh_native_credentials.sh"
+  STOCK="$REPO_ROOT/lib/wazuh_native_credentials.sh"
 }
 
 @test "installer is valid bash" {
@@ -41,32 +41,26 @@ setup() {
   [ "$status" -eq 0 ]
 }
 
-@test "installer starts stock Wazuh before native credential rotation" {
-  start_line="$(grep -nF 'docker compose up -d --remove-orphans' "$INSTALL" | head -1 | cut -d: -f1)"
-  rotate_line="$(grep -nF 'rotate_wazuh_runtime_credentials' "$INSTALL" | tail -1 | cut -d: -f1)"
-  [ -n "$start_line" ]
-  [ -n "$rotate_line" ]
-  [ "$start_line" -lt "$rotate_line" ]
-}
-
-@test "native credential module uses Wazuh password tool and REST API" {
-  run grep -F 'wazuh-passwords-tool.sh' "$NATIVE"
+@test "stock Wazuh credentials are discovered from rendered Compose" {
+  run grep -F 'capture_wazuh_stock_credentials' "$INSTALL"
   [ "$status" -eq 0 ]
-  run grep -F '/security/users/${user_id}' "$NATIVE"
+  run grep -F 'docker compose config --format json' "$STOCK"
+  [ "$status" -eq 0 ]
+  run grep -F 'Stock Wazuh credentials captured in memory without modification' "$STOCK"
   [ "$status" -eq 0 ]
 }
 
-@test "native credential path does not patch a host internal-user database" {
-  run grep -R -F 'patch_internal_user_hash' "$INSTALL" "$NATIVE"
+@test "installer does not rotate or rewrite Wazuh passwords" {
+  run grep -R -F 'rotate_wazuh_runtime_credentials' "$INSTALL" "$REPO_ROOT/lib"
   [ "$status" -ne 0 ]
-  run grep -E 'find .*internal_users\.yml|runtime-security/internal_users\.yml|config/wazuh_indexer/internal_users\.yml' "$NATIVE"
+  run grep -R -F 'wazuh-passwords-tool.sh' "$INSTALL" "$REPO_ROOT/lib"
+  [ "$status" -ne 0 ]
+  run grep -R -F 'patch_internal_user_hash' "$INSTALL" "$REPO_ROOT/lib"
   [ "$status" -ne 0 ]
 }
 
-@test "stock bootstrap credentials are discovered at runtime and not hardcoded" {
-  run grep -F 'docker compose config --format json' "$NATIVE"
-  [ "$status" -eq 0 ]
-  run grep -F 'Stock beta5 bootstrap credentials discovered in memory' "$NATIVE"
+@test "installer starts Wazuh with upstream defaults unchanged" {
+  run grep -F 'Starting Wazuh with the upstream default credentials unchanged' "$INSTALL"
   [ "$status" -eq 0 ]
 }
 
