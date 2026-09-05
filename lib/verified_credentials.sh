@@ -43,12 +43,16 @@ verify_runtime_credentials() {
   [[ "$code" == "200" ]] || die "Stock Wazuh admin/indexer credential verification failed (HTTP ${code:-none})."
   ok "Stock Wazuh admin/indexer credential authenticated successfully"
 
-  token="$(curl -ksS --max-time 15 -u "${WAZUH_API_USER}:${WAZUH_API_PASSWORD}" \
-    -X POST 'https://localhost:55000/security/user/authenticate?raw=true' || true)"
-  [[ -n "$token" && "$token" != *'error'* && "$token" != *'Unauthorized'* ]] || \
-    die "Stock Wazuh API credential verification failed for ${WAZUH_API_USER}."
-  unset token
-  ok "Stock Wazuh API credential authenticated successfully"
+  if [[ -n "${WAZUH_API_PASSWORD:-}" ]]; then
+    token="$(curl -ksS --max-time 15 -u "${WAZUH_API_USER}:${WAZUH_API_PASSWORD}" \
+      -X POST 'https://localhost:55000/security/user/authenticate?raw=true' || true)"
+    [[ -n "$token" && "$token" != *'error'* && "$token" != *'Unauthorized'* ]] || \
+      die "Stock Wazuh API credential verification failed for ${WAZUH_API_USER}."
+    unset token
+    ok "Stock Wazuh API credential authenticated successfully"
+  else
+    log "Stock beta5 API password is not exposed; standalone API authentication check skipped."
+  fi
 
   wazuh_dashboard_login_ok "$WAZUH_ADMIN_USER" "$WAZUH_ADMIN_PASSWORD" || \
     die "Wazuh dashboard UI rejected the stock admin credential."
