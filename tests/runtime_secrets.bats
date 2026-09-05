@@ -57,6 +57,19 @@ setup() {
   [ "$status" -ne 0 ]
 }
 
+@test "beta5 API password is optional and never blocks stock startup" {
+  run grep -F 'read_wazuh_api_password_from_dashboard_config' "$STOCK"
+  [ "$status" -eq 0 ]
+  run grep -F 'standalone API credential verification will be skipped' "$STOCK"
+  [ "$status" -eq 0 ]
+  run grep -F 'Could not discover stock beta5 API_PASSWORD' "$STOCK"
+  [ "$status" -ne 0 ]
+  run grep -F 'Stock beta5 API password is not exposed; standalone API authentication check skipped.' "$VERIFIED"
+  [ "$status" -eq 0 ]
+  run grep -F 'WAZUH_API_CREDENTIAL_STATUS=stock_api_password_not_exposed_by_pinned_beta5' "$CREDENTIALS"
+  [ "$status" -eq 0 ]
+}
+
 @test "Wazuh verifier tests actual dashboard login endpoint" {
   run grep -F '/auth/login?dataSourceId=' "$VERIFIED"
   [ "$status" -eq 0 ]
