@@ -4,7 +4,7 @@ setup() {
   REPO_ROOT="$(cd "$BATS_TEST_DIRNAME/.." && pwd)"
   INSTALL="$REPO_ROOT/install.sh"
   WAZUH="$REPO_ROOT/lib/wazuh.sh"
-  STOCK="$REPO_ROOT/lib/wazuh_native_credentials.sh"
+  V3_CERTS="$REPO_ROOT/lib/wazuh_v3_certs.sh"
 }
 
 @test "installer is valid bash" {
@@ -41,26 +41,22 @@ setup() {
   [ "$status" -eq 0 ]
 }
 
-@test "stock Wazuh credentials are discovered from rendered Compose" {
-  run grep -F 'capture_wazuh_stock_credentials' "$INSTALL"
+@test "v3 certificate generator recreates Wazuh config certificate directories" {
+  run grep -F 'rm -rf "$ca_dir" "$idx_dir" "$mgr_dir" "$dash_dir"' "$V3_CERTS"
   [ "$status" -eq 0 ]
-  run grep -F 'docker compose config --format json' "$STOCK"
-  [ "$status" -eq 0 ]
-  run grep -F 'Stock Wazuh credentials captured in memory without modification' "$STOCK"
+  run grep -F 'Fresh Wazuh TLS certificates generated with image-matched ownership' "$V3_CERTS"
   [ "$status" -eq 0 ]
 }
 
-@test "installer does not rotate or rewrite Wazuh passwords" {
-  run grep -R -F 'rotate_wazuh_runtime_credentials' "$INSTALL" "$REPO_ROOT/lib"
-  [ "$status" -ne 0 ]
-  run grep -R -F 'wazuh-passwords-tool.sh' "$INSTALL" "$REPO_ROOT/lib"
-  [ "$status" -ne 0 ]
-  run grep -R -F 'patch_internal_user_hash' "$INSTALL" "$REPO_ROOT/lib"
+@test "installer does not discover rotate or verify Wazuh passwords" {
+  run grep -R -E 'capture_wazuh_stock_credentials|rotate_wazuh_runtime_credentials|verify_runtime_credentials|verify_live_user_credentials|wazuh-passwords-tool\.sh|patch_internal_user_hash|API_PASSWORD' "$INSTALL" "$V3_CERTS" "$WAZUH"
   [ "$status" -ne 0 ]
 }
 
-@test "installer starts Wazuh with upstream defaults unchanged" {
-  run grep -F 'Starting Wazuh with the upstream default credentials unchanged' "$INSTALL"
+@test "installer starts Wazuh using v3 health gates" {
+  run grep -F 'PHASE 4/7 - START AND VERIFY WAZUH' "$INSTALL"
+  [ "$status" -eq 0 ]
+  run grep -F 'WAZUH ${WAZUH_VERSION} PASSED ALL HEALTH GATES' "$INSTALL"
   [ "$status" -eq 0 ]
 }
 
@@ -71,7 +67,7 @@ setup() {
   ! http_dashboard_ok 500
 }
 
-@test "indexer and API policies accept expected auth/listener responses" {
+@test "indexer and API policies accept expected auth listener responses" {
   source "$INSTALL"
   http_indexer_ok 403
   http_api_ok 404

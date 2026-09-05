@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # SOC Lab installer / operations entrypoint
-# Wazuh 5.0.0-beta5 + Shuffle on WSL2 / Docker Desktop
+# Known-working Wazuh 5.0.0-beta5 v3 baseline + Shuffle on WSL2 / Docker Desktop
 set -Eeuo pipefail
 umask 077
 
@@ -24,22 +24,6 @@ WAZUH_MANAGER_UID=""
 WAZUH_MANAGER_GID=""
 WAZUH_DASHBOARD_UID=""
 WAZUH_DASHBOARD_GID=""
-WAZUH_ADMIN_USER="admin"
-WAZUH_ADMIN_PASSWORD=""
-WAZUH_DASHBOARD_SERVICE_USER="kibanaserver"
-WAZUH_DASHBOARD_SERVICE_PASSWORD=""
-WAZUH_API_USER="wazuh-wui"
-WAZUH_API_PASSWORD=""
-WAZUH_DASHBOARD_BROWSER_URL=""
-SHUFFLE_ADMIN_USERNAME=""
-SHUFFLE_ADMIN_PASSWORD=""
-SHUFFLE_OPENSEARCH_PASSWORD=""
-SHUFFLE_API_KEY=""
-SHUFFLE_ENCRYPTION_MODIFIER=""
-SHUFFLE_DETECTED_URL=""
-SHUFFLE_BROWSER_URL=""
-SHUFFLE_API_BASE_URL=""
-SHUFFLE_LOGIN_COOKIE_FILE=""
 
 exec > >(tee -a "$LOG") 2>&1
 log()  { printf '[%s] %s\n' "$(date '+%F %T')" "$*"; }
@@ -59,23 +43,21 @@ source "$SCRIPT_DIR/lib/credentials.sh"
 source "$SCRIPT_DIR/lib/common.sh"
 # shellcheck source=lib/wazuh.sh
 source "$SCRIPT_DIR/lib/wazuh.sh"
-# shellcheck source=lib/wazuh_native_credentials.sh
-source "$SCRIPT_DIR/lib/wazuh_native_credentials.sh"
+# shellcheck source=lib/wazuh_v3_certs.sh
+source "$SCRIPT_DIR/lib/wazuh_v3_certs.sh"
 # shellcheck source=lib/shuffle.sh
 source "$SCRIPT_DIR/lib/shuffle.sh"
 # shellcheck source=lib/healthcheck.sh
 source "$SCRIPT_DIR/lib/healthcheck.sh"
-# shellcheck source=lib/verified_credentials.sh
-source "$SCRIPT_DIR/lib/verified_credentials.sh"
 
 install_all() {
   need_root
   check_docker
 
   phase "SOC LAB CLEAN INSTALL - WAZUH ${WAZUH_VERSION} + SHUFFLE"
+  log "Known-working v3 runtime path: no Wazuh password prompts, discovery, rotation, or injection."
   log "This will erase ONLY the previous /opt/soclab, /opt/soar-lab, and their lab-owned Docker Compose state."
 
-  collect_runtime_credentials
   clean_lab
 
   phase "HOST PREPARATION"
@@ -101,28 +83,38 @@ install_all() {
 
   patch_wazuh_dashboard_port
 
-  log "Validating stock Wazuh Compose configuration"
-  (cd "$WAZUH_SINGLE" && docker compose config --quiet)
+  log "Validating Wazuh Compose configuration"
+  (cd "$WAZUH_SINGLE" && docker compose config >/tmp/soclab-wazuh-beta5-compose.yml)
 
   log "Pulling/verifying Wazuh ${WAZUH_VERSION} images"
   (cd "$WAZUH_SINGLE" && docker compose pull)
 
-  capture_wazuh_stock_credentials
   detect_wazuh_image_accounts
   generate_wazuh_certs_locally
   verify_wazuh_cert_mounts
 
-  phase "PHASE 4/7 - START STOCK WAZUH ${WAZUH_VERSION}"
+  phase "PHASE 4/7 - START AND VERIFY WAZUH ${WAZUH_VERSION}"
 
-  log "Starting Wazuh with the upstream default credentials unchanged"
+  log "Starting Wazuh"
   if ! (cd "$WAZUH_SINGLE" && docker compose up -d --remove-orphans); then
     dump_wazuh_diagnostics
     die "docker compose up failed for Wazuh."
   fi
 
-  wait_wazuh_service "wazuh.indexer" 480 || { dump_wazuh_diagnostics; die "Wazuh indexer did not become healthy."; }
-  wait_wazuh_service "wazuh.manager" 420 || { dump_wazuh_diagnostics; die "Wazuh manager did not become healthy."; }
-  wait_wazuh_service "wazuh.dashboard" 420 || { dump_wazuh_diagnostics; die "Wazuh dashboard did not become healthy."; }
+  wait_wazuh_service "wazuh.indexer" 480 || {
+    dump_wazuh_diagnostics
+    die "Wazuh indexer did not become healthy."
+  }
+
+  wait_wazuh_service "wazuh.manager" 420 || {
+    dump_wazuh_diagnostics
+    die "Wazuh manager did not become healthy."
+  }
+
+  wait_wazuh_service "wazuh.dashboard" 420 || {
+    dump_wazuh_diagnostics
+    die "Wazuh dashboard did not become healthy."
+  }
 
   local indexer_id
   indexer_id="$(compose_service_id wazuh.indexer)"
@@ -138,11 +130,17 @@ install_all() {
   local start code
   start="$(date +%s)"
   while true; do
-    code="$(curl -ksS -o /tmp/soclab-dashboard-http.out -w '%{http_code}' --max-time 10 \
+    code="$(curl -ksS -o /tmp/soclab-dashboard-http.out \
+      -w '%{http_code}' --max-time 10 \
       "https://localhost:${WAZUH_DASHBOARD_PORT}/login" || true)"
+
     case "$code" in
-      200|301|302|401|403) ok "Dashboard HTTPS endpoint reachable (HTTP $code)"; break ;;
+      200|301|302|401|403)
+        ok "Dashboard HTTPS endpoint reachable (HTTP $code)"
+        break
+        ;;
     esac
+
     if (( $(date +%s) - start >= 180 )); then
       dump_wazuh_diagnostics
       die "Wazuh dashboard /login did not return a valid HTTP response (last HTTP ${code:-none})."
@@ -150,32 +148,24 @@ install_all() {
     sleep 8
   done
 
-  code="$(curl -ksS -o /tmp/soclab-indexer-http.out -w '%{http_code}' --max-time 10 https://localhost:9200/ || true)"
+  code="$(curl -ksS -o /tmp/soclab-indexer-http.out \
+    -w '%{http_code}' --max-time 10 https://localhost:9200/ || true)"
   case "$code" in
     200|401|403) ok "Indexer HTTPS endpoint reachable (HTTP $code)" ;;
     *) dump_wazuh_diagnostics; die "Indexer HTTPS endpoint failed (HTTP ${code:-none})." ;;
   esac
 
-  code="$(curl -ksS -o /tmp/soclab-wazuh-api-http.out -w '%{http_code}' --max-time 10 https://localhost:55000/ || true)"
+  code="$(curl -ksS -o /tmp/soclab-wazuh-api-http.out \
+    -w '%{http_code}' --max-time 10 https://localhost:55000/ || true)"
   case "$code" in
     200|401|403|404) ok "Wazuh API HTTPS listener reachable (HTTP $code)" ;;
     *) dump_wazuh_diagnostics; die "Wazuh API listener failed (HTTP ${code:-none})." ;;
   esac
 
-  verify_runtime_credentials
-  ok "WAZUH ${WAZUH_VERSION} PASSED ALL HEALTH AND DEFAULT-CREDENTIAL GATES"
+  ok "WAZUH ${WAZUH_VERSION} PASSED ALL HEALTH GATES"
 
   install_shuffle
-  collect_browser_urls
   final_health
-  verify_live_user_credentials
-
-  write_credentials_file
-  if ! healthcheck_all; then
-    rm -f "$STATE_DIR/credentials.txt"
-    die "Stored-default credential verification failed; credential inventory was removed rather than leaving incorrect values."
-  fi
-
   print_report
 }
 
@@ -184,7 +174,7 @@ usage() {
 Usage: sudo ./install.sh <command>
 
 Commands:
-  install       Full clean non-interactive install of Wazuh ${WAZUH_VERSION} + Shuffle using upstream/default credentials unchanged
+  install       Full clean install using the known-working v3 Wazuh beta5 runtime path
   healthcheck   Run reusable end-to-end healthcheck
   verify        Run the full local integration verification (alias of healthcheck)
   status        Show Docker Compose status and lab URLs
