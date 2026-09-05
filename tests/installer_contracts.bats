@@ -12,6 +12,20 @@ setup() {
   [ "$status" -eq 0 ]
 }
 
+@test "installer with no arguments shows command options instead of installing" {
+  run "$INSTALL"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Usage: sudo ./install.sh <command>"* ]]
+  [[ "$output" == *"Commands:"* ]]
+  [[ "$output" == *"install"* ]]
+  [[ "$output" == *"healthcheck"* ]]
+  [[ "$output" == *"status"* ]]
+  [[ "$output" == *"logs [target]"* ]]
+  [[ "$output" == *"reset"* ]]
+  [[ "$output" == *"credentials"* ]]
+  [[ "$output" != *"SOC LAB CLEAN INSTALL"* ]]
+}
+
 @test "installer pins Wazuh beta5" {
   run grep -F 'WAZUH_VERSION="5.0.0-beta5"' "$INSTALL"
   [ "$status" -eq 0 ]
