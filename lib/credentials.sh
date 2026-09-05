@@ -7,8 +7,8 @@ password_policy_ok() {
   [[ "$value" =~ [A-Z] ]] || return 1
   [[ "$value" =~ [a-z] ]] || return 1
   [[ "$value" =~ [0-9] ]] || return 1
-  printf '%s' "$value" | grep -qE '[.*+?-]' || return 1
-  printf '%s' "$value" | grep -qE '^[A-Za-z0-9.*+?-]+$' || return 1
+  printf '%s' "$value" | grep -qE '[!.*+?-]' || return 1
+  printf '%s' "$value" | grep -qE '^[A-Za-z0-9!.*+?-]+$' || return 1
 }
 
 read_password_masked() {
@@ -44,7 +44,7 @@ prompt_password() {
   while true; do
     read_password_masked "$label: " first
     if ! password_policy_ok "$first"; then
-      printf 'Password must be 8-64 characters and contain uppercase, lowercase, number, and one of . * + ? -\n' >/dev/tty
+      printf 'Password must be 8-64 characters and contain uppercase, lowercase, number, and one of . * + ? - !\n' >/dev/tty
       continue
     fi
     read_password_masked "Confirm $label: " second
