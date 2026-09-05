@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # shellcheck shell=bash
 
+# shellcheck source=lib/wazuh_config_preserve.sh
+source "$SCRIPT_DIR/lib/wazuh_config_preserve.sh"
+
 upsert_env() {
   local file="$1" key="$2" value="$3"
   touch "$file"
