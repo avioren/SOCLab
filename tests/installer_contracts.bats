@@ -3,10 +3,12 @@
 setup() {
   REPO_ROOT="$(cd "$BATS_TEST_DIRNAME/.." && pwd)"
   INSTALL="$REPO_ROOT/install.sh"
+  WAZUH="$REPO_ROOT/lib/wazuh.sh"
+  HEALTH="$REPO_ROOT/lib/healthcheck.sh"
 }
 
-@test "installer is valid bash" {
-  run bash -n "$INSTALL"
+@test "installer and libraries are valid bash" {
+  run bash -c "bash -n '$INSTALL' && for f in '$REPO_ROOT'/lib/*.sh; do bash -n \"\$f\" || exit 1; done"
   [ "$status" -eq 0 ]
 }
 
@@ -15,27 +17,27 @@ setup() {
   [ "$status" -eq 0 ]
 }
 
-@test "installer does not contain destructive global docker prune commands" {
-  run bash -c "grep -Ev '^[[:space:]]*#' '$INSTALL' | grep -E 'docker[[:space:]]+(system|volume|image)[[:space:]]+prune'"
+@test "project does not contain destructive global docker prune commands" {
+  run bash -c "grep -REv '^[[:space:]]*#' '$INSTALL' '$REPO_ROOT/lib' | grep -E 'docker[[:space:]]+(system|volume|image)[[:space:]]+prune'"
   [ "$status" -ne 0 ]
 }
 
 @test "container discovery uses docker compose service IDs" {
-  run grep -F 'docker compose ps -q --all "$service"' "$INSTALL"
+  run grep -F 'docker compose ps -q --all "$service"' "$WAZUH"
   [ "$status" -eq 0 ]
 }
 
 @test "beta5 UID and GID are detected from actual images" {
-  run grep -F 'detect_wazuh_image_accounts' "$INSTALL"
+  run grep -F 'detect_wazuh_image_accounts' "$WAZUH"
   [ "$status" -eq 0 ]
-  run grep -F 'beta5 indexer user:' "$INSTALL"
+  run grep -F 'beta5 indexer user:' "$WAZUH"
   [ "$status" -eq 0 ]
 }
 
 @test "certificate mount preflight is mandatory" {
-  run grep -F 'verify_wazuh_cert_mounts' "$INSTALL"
+  run grep -F 'verify_wazuh_cert_mounts' "$WAZUH"
   [ "$status" -eq 0 ]
-  run grep -F 'Certificate mount/readability preflight failed' "$INSTALL"
+  run grep -F 'Certificate mount/readability preflight failed' "$WAZUH"
   [ "$status" -eq 0 ]
 }
 

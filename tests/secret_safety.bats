@@ -9,7 +9,7 @@ setup() {
   [ "$status" -eq 0 ]
 }
 
-@test "installer does not publish a literal Wazuh dashboard password" {
-  run grep -E 'WAZUH_DASHBOARD_PASSWORD[^=]*=[A-Za-z0-9]' "$REPO_ROOT/install.sh"
+@test "repository does not publish a literal Wazuh dashboard password" {
+  run grep -RE 'WAZUH_DASHBOARD_PASSWORD[^=]*=[A-Za-z0-9]' "$REPO_ROOT/install.sh" "$REPO_ROOT/lib"
   [ "$status" -ne 0 ]
 }

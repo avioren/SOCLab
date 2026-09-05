@@ -24,7 +24,8 @@ shellcheck:
   stage: lint
   script:
     - bash -n install.sh
-    - shellcheck -x -e SC2317 -S error install.sh
+    - for f in lib/*.sh scripts/*.sh tests/helpers/*.sh; do bash -n "$f"; done
+    - shellcheck -x -e SC2317 -S error install.sh lib/*.sh scripts/*.sh
     - bash -n tests/helpers/fake-docker.sh
 
 unit_tests:
