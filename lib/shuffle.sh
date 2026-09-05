@@ -56,12 +56,11 @@ install_shuffle() {
   touch "$env_file"
   chmod 600 "$env_file"
 
-  local shuffle_pw encryption api_key wazuh_default_password
+  local shuffle_pw encryption api_key
   shuffle_pw="$(openssl rand -base64 40 | tr -dc 'A-Za-z0-9' | head -c 28)"
   [[ ${#shuffle_pw} -ge 16 ]] || shuffle_pw="ShuffleLabAa1$(date +%s)"
   encryption="$(openssl rand -hex 32)"
   api_key="$(openssl rand -hex 32)"
-  printf -v wazuh_default_password '%s%s' 'Secret' 'Password'
 
   upsert_env "$env_file" "ENVIRONMENT_NAME" "Shuffle"
   upsert_env "$env_file" "FRONTEND_PORT" "$SHUFFLE_FRONTEND_PORT"
@@ -125,21 +124,37 @@ install_shuffle() {
   mkdir -p "$STATE_DIR"
 
   cat >"$STATE_DIR/credentials.txt" <<EOF
+# SOC Lab runtime credential inventory - LOCAL FILE, NEVER COMMIT TO GIT
+# Wazuh 5.0.0-beta5 is started with its upstream 5.x beta defaults unchanged.
+# Shuffle upstream ships with no default UI account; this lab intentionally
+# bootstraps a local admin account and a generated OpenSearch password.
+
 WAZUH_VERSION=${WAZUH_VERSION}
 WAZUH_DASHBOARD_URL=https://localhost:${WAZUH_DASHBOARD_PORT}
-WAZUH_DASHBOARD_USER=admin
-WAZUH_DASHBOARD_PASSWORD_DEFAULT=${wazuh_default_password}
+WAZUH_DASHBOARD_USERNAME=admin
+WAZUH_DASHBOARD_PASSWORD=admin
 WAZUH_INDEXER_URL=https://localhost:9200
+WAZUH_INDEXER_USERNAME=admin
+WAZUH_INDEXER_PASSWORD=admin
+WAZUH_DASHBOARD_SERVICE_USERNAME=kibanaserver
+WAZUH_DASHBOARD_SERVICE_PASSWORD=kibanaserver
 WAZUH_API_URL=https://localhost:55000
+WAZUH_API_USERNAME=wazuh
+WAZUH_API_PASSWORD=wazuh
+WAZUH_WUI_API_USERNAME=wazuh-wui
+WAZUH_WUI_API_PASSWORD=wazuh-wui
 
 SHUFFLE_URL=http://localhost:${SHUFFLE_FRONTEND_PORT}
-SHUFFLE_DEFAULT_USERNAME=admin@soclab.local
-SHUFFLE_DEFAULT_PASSWORD=${shuffle_pw}
-SHUFFLE_DEFAULT_APIKEY=${api_key}
+SHUFFLE_UI_USERNAME=admin@soclab.local
+SHUFFLE_UI_PASSWORD=${shuffle_pw}
+SHUFFLE_API_KEY=${api_key}
+SHUFFLE_OPENSEARCH_USERNAME=admin
 SHUFFLE_OPENSEARCH_PASSWORD=${shuffle_pw}
+SHUFFLE_UPSTREAM_UI_DEFAULT_ACCOUNT=none
 EOF
 
   chmod 600 "$STATE_DIR/credentials.txt"
 
+  ok "Runtime credential inventory written to $STATE_DIR/credentials.txt"
   ok "Shuffle passed frontend verification"
 }
