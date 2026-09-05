@@ -1,0 +1,22 @@
+# Secrets and local environment
+.env
+.env.*
+*.key
+*.pem
+credentials.txt
+secrets/
+
+# Runtime / logs
+*.log
+state/
+public/
+public-check/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+*~
+
+# Test temp
+.tmp/

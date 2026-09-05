@@ -1,0 +1,67 @@
+stages:
+  - security
+  - lint
+  - test
+  - docs
+  - integration
+
+secret_scan:
+  image: alpine:3.20
+  stage: security
+  before_script:
+    - apk add --no-cache bash grep findutils
+  script:
+    - ./scripts/check-secrets.sh
+
+.default_debian:
+  image: debian:bookworm-slim
+  before_script:
+    - apt-get update -qq
+    - apt-get install -y --no-install-recommends bash shellcheck bats ca-certificates git
+
+shellcheck:
+  extends: .default_debian
+  stage: lint
+  script:
+    - bash -n install.sh
+    - shellcheck -x -e SC2317 -S error install.sh
+    - bash -n tests/helpers/fake-docker.sh
+
+unit_tests:
+  extends: .default_debian
+  stage: test
+  script:
+    - bats tests
+
+mkdocs_check:
+  image: python:3.13-slim
+  stage: docs
+  script:
+    - pip install --no-cache-dir mkdocs==1.6.1
+    - mkdocs build --strict --site-dir public-check
+  artifacts:
+    when: always
+    paths:
+      - public-check/
+
+pages:
+  image: python:3.13-slim
+  stage: docs
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+  script:
+    - pip install --no-cache-dir mkdocs==1.6.1
+    - mkdocs build --strict --site-dir public
+  artifacts:
+    paths:
+      - public/
+
+integration_smoke:
+  stage: integration
+  tags:
+    - soclab-integration
+  rules:
+    - when: manual
+  allow_failure: false
+  script:
+    - ./install.sh healthcheck

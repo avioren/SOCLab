@@ -1,0 +1,14 @@
+site_name: SOC Lab - Wazuh 5 beta5 + Shuffle
+site_description: Reproducible WSL2 SOC/SOAR lab with health checks and GitLab CI
+nav:
+  - Home: index.md
+  - Installation: installation.md
+  - Operations & Healthcheck: operations.md
+  - Architecture: architecture.md
+  - Testing & CI: testing.md
+  - GitLab Workflow: gitlab.md
+  - Integration Runner: runner.md
+  - Troubleshooting: troubleshooting.md
+theme:
+  name: mkdocs
+strict: true
