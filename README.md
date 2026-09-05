@@ -7,13 +7,14 @@ GitLab-ready automation project for a reproducible WSL2 SOC/SOAR lab.
 ```bash
 chmod +x install.sh
 sudo ./install.sh install
-./install.sh healthcheck
+./install.sh verify
 ```
 
 ## Commands
 
 ```text
 install.sh install
+install.sh verify
 install.sh healthcheck
 install.sh status
 install.sh logs [wazuh|shuffle|all]
@@ -21,7 +22,25 @@ install.sh reset
 install.sh credentials
 ```
 
+`verify` is the local full integration verification command. It runs the same end-to-end health checks as `healthcheck` against the Wazuh + Shuffle lab on your WSL machine.
+
 Documentation is under `docs/` and is built by GitLab CI with MkDocs. See `docs/gitlab.md` for repository setup and authentication guidance.
+
+## CI model
+
+Normal CI runs only on GitLab-hosted runners:
+
+- secret safety scan
+- Bash syntax and ShellCheck
+- Bats unit/regression tests
+- MkDocs documentation validation
+- GitLab Pages build from `main`
+
+No self-hosted GitLab Runner is required. The resource-heavy real Wazuh + Shuffle validation is intentionally run locally on the lab machine with:
+
+```bash
+./install.sh verify
+```
 
 ## Secret handling
 
