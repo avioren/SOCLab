@@ -7,7 +7,7 @@ nav:
   - Architecture: architecture.md
   - Testing & CI: testing.md
   - GitLab Workflow: gitlab.md
-  - Integration Runner: runner.md
+  - Local Integration Verification: runner.md
   - Troubleshooting: troubleshooting.md
 theme:
   name: mkdocs
