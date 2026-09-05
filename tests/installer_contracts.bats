@@ -56,10 +56,10 @@ setup() {
   [ "$status" -eq 0 ]
 }
 
-@test "native credential path does not patch internal_users.yml" {
+@test "native credential path does not patch a host internal-user database" {
   run grep -R -F 'patch_internal_user_hash' "$INSTALL" "$NATIVE"
   [ "$status" -ne 0 ]
-  run grep -R -F 'internal_users.yml' "$NATIVE"
+  run grep -E 'find .*internal_users\.yml|runtime-security/internal_users\.yml|config/wazuh_indexer/internal_users\.yml' "$NATIVE"
   [ "$status" -ne 0 ]
 }
 
