@@ -1,163 +1,38 @@
 #!/usr/bin/env bash
 # shellcheck shell=bash
 
-base_password_policy_ok() {
-  local value="${1:-}"
-  (( ${#value} >= 8 && ${#value} <= 64 )) || return 1
-  [[ "$value" =~ [A-Z] ]] || return 1
-  [[ "$value" =~ [a-z] ]] || return 1
-  [[ "$value" =~ [0-9] ]] || return 1
-}
-
-# Wazuh's documented indexer password tool accepts these special characters.
-wazuh_password_policy_ok() {
-  local value="${1:-}"
-  base_password_policy_ok "$value" || return 1
-  printf '%s' "$value" | grep -qE '[.*+?-]' || return 1
-  printf '%s' "$value" | grep -qE '^[A-Za-z0-9.*+?-]+$' || return 1
-}
-
-# Shuffle is not constrained by the Wazuh indexer tool, so keep ! available.
-shuffle_password_policy_ok() {
-  local value="${1:-}"
-  base_password_policy_ok "$value" || return 1
-  printf '%s' "$value" | grep -qE '[!.*+?-]' || return 1
-  printf '%s' "$value" | grep -qE '^[A-Za-z0-9!.*+?-]+$' || return 1
-}
-
-read_password_masked() {
-  local prompt="$1" outvar="$2" char value=""
-  printf '%s' "$prompt" >/dev/tty
-
-  while IFS= read -r -s -n 1 char </dev/tty; do
-    if [[ -z "$char" ]]; then
-      printf '\n' >/dev/tty
-      break
-    fi
-
-    case "$char" in
-      $'\177'|$'\b')
-        if (( ${#value} > 0 )); then
-          value="${value%?}"
-          printf '\b \b' >/dev/tty
-        fi
-        ;;
-      *)
-        value+="$char"
-        printf '*' >/dev/tty
-        ;;
-    esac
-  done
-
-  printf -v "$outvar" '%s' "$value"
-  unset char value
-}
-
-prompt_password_with_policy() {
-  local label="$1" outvar="$2" policy_fn="$3" policy_message="$4"
-  local first second
-  while true; do
-    read_password_masked "$label: " first
-    if ! "$policy_fn" "$first"; then
-      printf '%s\n' "$policy_message" >/dev/tty
-      continue
-    fi
-    read_password_masked "Confirm $label: " second
-    [[ "$first" == "$second" ]] || {
-      printf 'Passwords do not match. Try again.\n' >/dev/tty
-      continue
-    }
-    printf -v "$outvar" '%s' "$first"
-    unset first second
-    return 0
-  done
-}
-
-generate_wazuh_password() {
-  local outvar="$1" value
-  value="A1.$(openssl rand -hex 14)a"
-  wazuh_password_policy_ok "$value" || die "Internal Wazuh password generation failed policy validation."
-  printf -v "$outvar" '%s' "$value"
-  unset value
-}
-
-generate_shuffle_password() {
-  local outvar="$1" value
-  value="A1.$(openssl rand -hex 14)a"
-  shuffle_password_policy_ok "$value" || die "Internal Shuffle password generation failed policy validation."
-  printf -v "$outvar" '%s' "$value"
-  unset value
-}
-
-prompt_browser_url() {
-  local label="$1" default="$2" outvar="$3" value
-  while true; do
-    IFS= read -r -p "$label [$default]: " value </dev/tty
-    [[ -n "$value" ]] || value="$default"
-    if [[ "$value" =~ ^https?://[^[:space:]]+$ ]]; then
-      printf -v "$outvar" '%s' "${value%/}"
-      return 0
-    fi
-    printf 'Enter a full http:// or https:// URL.\n' >/dev/tty
-  done
-}
-
+# The lab intentionally keeps upstream/default credentials unchanged. This
+# function exists to preserve the installer flow while making it explicitly
+# non-interactive.
 collect_runtime_credentials() {
-  [[ -r /dev/tty ]] || die "Interactive terminal required to collect runtime credentials."
-  phase "RUNTIME CREDENTIALS - LOCAL ONLY"
-  log "Choose the two UI accounts you will actually use. Internal service secrets are generated locally."
-  log "Password fields are masked with * characters. Username/email and URL fields remain visible."
-  log "No password, token, API key, or encryption secret is written to Git or the installer log."
-
-  prompt_password_with_policy \
-    "Wazuh dashboard admin password (username: ${WAZUH_ADMIN_USER})" \
-    WAZUH_ADMIN_PASSWORD \
-    wazuh_password_policy_ok \
-    "Wazuh password must be 8-64 characters with uppercase, lowercase, number, and one of . * + ? - (Wazuh native tool policy)."
-
-  local entered_user
-  IFS= read -r -p "Shuffle admin username/email [$SHUFFLE_ADMIN_USERNAME]: " entered_user </dev/tty
-  [[ -n "$entered_user" ]] && SHUFFLE_ADMIN_USERNAME="$entered_user"
-  [[ "$SHUFFLE_ADMIN_USERNAME" =~ ^[A-Za-z0-9._+@-]+$ ]] || die "Shuffle username contains unsupported characters."
-
-  prompt_password_with_policy \
-    "Shuffle UI admin password" \
-    SHUFFLE_ADMIN_PASSWORD \
-    shuffle_password_policy_ok \
-    "Shuffle password must be 8-64 characters with uppercase, lowercase, number, and one of . * + ? - !"
-
-  generate_wazuh_password WAZUH_DASHBOARD_SERVICE_PASSWORD
-  generate_wazuh_password WAZUH_API_PASSWORD
-  generate_shuffle_password SHUFFLE_OPENSEARCH_PASSWORD
-  SHUFFLE_ENCRYPTION_MODIFIER="$(openssl rand -hex 32)"
-  SHUFFLE_API_KEY=""
-
-  ok "User-facing credentials collected; internal service credentials generated in memory"
+  phase "RUNTIME CREDENTIALS - STOCK DEFAULTS"
+  log "No password or username prompts will be shown."
+  log "Wazuh and Shuffle credentials will be read from their rendered upstream Compose defaults after cloning."
+  log "No password will be changed, generated, or rotated by this installer."
+  ok "Installer configured to preserve stock/default credentials"
 }
 
+# Browser URLs are deterministic for this WSL2/Docker Desktop lab. Do not stop
+# the install for interactive URL confirmation.
 collect_browser_urls() {
-  [[ -r /dev/tty ]] || die "Interactive terminal required to confirm browser URLs."
-  local detected_wazuh="https://localhost:${WAZUH_DASHBOARD_PORT}"
-  local detected_shuffle="${SHUFFLE_DETECTED_URL:-http://localhost:${SHUFFLE_FRONTEND_PORT}}"
-
-  phase "CONFIRM BROWSER URLS"
-  log "These are the URLs that will be written to the local credential inventory."
-  log "Accept localhost defaults when you will browse from this Windows/WSL workstation; otherwise enter the hostname/IP you use in your browser."
-  prompt_browser_url "Wazuh dashboard URL" "$detected_wazuh" WAZUH_DASHBOARD_BROWSER_URL
-  prompt_browser_url "Shuffle URL" "$detected_shuffle" SHUFFLE_BROWSER_URL
+  WAZUH_DASHBOARD_BROWSER_URL="https://localhost:${WAZUH_DASHBOARD_PORT}"
+  SHUFFLE_BROWSER_URL="${SHUFFLE_DETECTED_URL:-http://localhost:${SHUFFLE_FRONTEND_PORT}}"
+  ok "Browser URLs selected automatically: Wazuh=${WAZUH_DASHBOARD_BROWSER_URL}, Shuffle=${SHUFFLE_BROWSER_URL}"
 }
 
 write_credentials_file() {
-  [[ -n "${WAZUH_DASHBOARD_BROWSER_URL:-}" ]] || die "Wazuh browser URL has not been confirmed."
-  [[ -n "${SHUFFLE_BROWSER_URL:-}" ]] || die "Shuffle browser URL has not been confirmed."
+  [[ -n "${WAZUH_DASHBOARD_BROWSER_URL:-}" ]] || die "Wazuh browser URL was not determined."
+  [[ -n "${SHUFFLE_BROWSER_URL:-}" ]] || die "Shuffle browser URL was not determined."
 
   mkdir -p "$STATE_DIR"
   local tmp owner group
   tmp="$(mktemp "$STATE_DIR/.credentials.XXXXXX")"
   chmod 600 "$tmp"
   cat >"$tmp" <<EOF
-# SOC Lab VERIFIED runtime credentials - LOCAL FILE, NEVER COMMIT TO GIT
-# Written only after service and authentication verification on $(date -Is)
+# SOC Lab runtime credentials - LOCAL FILE, NEVER COMMIT TO GIT
+# Values below are the stock/default credentials discovered from the upstream
+# rendered Compose models. The installer does not change passwords.
+# Written after service verification on $(date -Is)
 WAZUH_VERSION=${WAZUH_VERSION}
 WAZUH_DASHBOARD_URL=${WAZUH_DASHBOARD_BROWSER_URL}
 WAZUH_DASHBOARD_USERNAME=${WAZUH_ADMIN_USER}
@@ -171,18 +46,32 @@ WAZUH_API_URL=https://localhost:55000
 WAZUH_API_USERNAME=${WAZUH_API_USER}
 WAZUH_API_PASSWORD=${WAZUH_API_PASSWORD}
 SHUFFLE_URL=${SHUFFLE_BROWSER_URL}
-SHUFFLE_UI_USERNAME=${SHUFFLE_ADMIN_USERNAME}
-SHUFFLE_UI_PASSWORD=${SHUFFLE_ADMIN_PASSWORD}
 SHUFFLE_API_URL=${SHUFFLE_API_BASE_URL:-${SHUFFLE_DETECTED_URL}}/api/v1
 SHUFFLE_OPENSEARCH_URL=https://localhost:${SHUFFLE_OPENSEARCH_PORT}
 SHUFFLE_OPENSEARCH_USERNAME=admin
-SHUFFLE_OPENSEARCH_PASSWORD=${SHUFFLE_OPENSEARCH_PASSWORD}
-SHUFFLE_ENCRYPTION_MODIFIER=${SHUFFLE_ENCRYPTION_MODIFIER}
 EOF
+
+  if [[ -n "${SHUFFLE_ADMIN_USERNAME:-}" && -n "${SHUFFLE_ADMIN_PASSWORD:-}" ]]; then
+    printf 'SHUFFLE_UI_USERNAME=%s\n' "$SHUFFLE_ADMIN_USERNAME" >>"$tmp"
+    printf 'SHUFFLE_UI_PASSWORD=%s\n' "$SHUFFLE_ADMIN_PASSWORD" >>"$tmp"
+  else
+    printf 'SHUFFLE_UI_CREDENTIAL_STATUS=no_stock_default_ui_account_detected_use_upstream_first_run_registration\n' >>"$tmp"
+  fi
+
+  if [[ -n "${SHUFFLE_OPENSEARCH_PASSWORD:-}" ]]; then
+    printf 'SHUFFLE_OPENSEARCH_PASSWORD=%s\n' "$SHUFFLE_OPENSEARCH_PASSWORD" >>"$tmp"
+  else
+    printf 'SHUFFLE_OPENSEARCH_PASSWORD_STATUS=no_stock_value_detected\n' >>"$tmp"
+  fi
+
+  if [[ -n "${SHUFFLE_ENCRYPTION_MODIFIER:-}" ]]; then
+    printf 'SHUFFLE_ENCRYPTION_MODIFIER=%s\n' "$SHUFFLE_ENCRYPTION_MODIFIER" >>"$tmp"
+  fi
+
   if [[ -n "${SHUFFLE_API_KEY:-}" ]]; then
     printf 'SHUFFLE_API_KEY=%s\n' "$SHUFFLE_API_KEY" >>"$tmp"
   else
-    printf 'SHUFFLE_API_KEY_STATUS=not_generated_use_Shuffle_Settings_to_generate_one\n' >>"$tmp"
+    printf 'SHUFFLE_API_KEY_STATUS=no_stock_api_key_detected\n' >>"$tmp"
   fi
 
   mv -f "$tmp" "$STATE_DIR/credentials.txt"
@@ -192,7 +81,7 @@ EOF
     group="$(id -gn "$owner")"
     chown "$owner:$group" "$STATE_DIR/credentials.txt"
   fi
-  ok "Verified local credential inventory written to $STATE_DIR/credentials.txt (mode 600)"
+  ok "Stock/default credential inventory written to $STATE_DIR/credentials.txt (mode 600)"
 }
 
 credential_value() {
