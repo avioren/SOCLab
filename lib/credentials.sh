@@ -11,17 +11,43 @@ password_policy_ok() {
   printf '%s' "$value" | grep -qE '^[A-Za-z0-9.*+?-]+$' || return 1
 }
 
+read_password_masked() {
+  local prompt="$1" outvar="$2" char value=""
+  printf '%s' "$prompt" >/dev/tty
+
+  while IFS= read -r -s -n 1 char </dev/tty; do
+    if [[ -z "$char" ]]; then
+      printf '\n' >/dev/tty
+      break
+    fi
+
+    case "$char" in
+      $'\177'|$'\b')
+        if (( ${#value} > 0 )); then
+          value="${value%?}"
+          printf '\b \b' >/dev/tty
+        fi
+        ;;
+      *)
+        value+="$char"
+        printf '*' >/dev/tty
+        ;;
+    esac
+  done
+
+  printf -v "$outvar" '%s' "$value"
+  unset char value
+}
+
 prompt_password() {
   local label="$1" outvar="$2" first second
   while true; do
-    IFS= read -r -s -p "$label: " first </dev/tty
-    printf '\n' >/dev/tty
+    read_password_masked "$label: " first
     if ! password_policy_ok "$first"; then
       printf 'Password must be 8-64 characters and contain uppercase, lowercase, number, and one of . * + ? -\n' >/dev/tty
       continue
     fi
-    IFS= read -r -s -p "Confirm $label: " second </dev/tty
-    printf '\n' >/dev/tty
+    read_password_masked "Confirm $label: " second
     [[ "$first" == "$second" ]] || {
       printf 'Passwords do not match. Try again.\n' >/dev/tty
       continue
@@ -57,6 +83,7 @@ collect_runtime_credentials() {
   [[ -r /dev/tty ]] || die "Interactive terminal required to collect runtime credentials."
   phase "RUNTIME CREDENTIALS - LOCAL ONLY"
   log "Choose the two UI accounts you will actually use. Internal service secrets are generated locally."
+  log "Password fields are masked with * characters. Username/email and URL fields remain visible."
   log "No password, token, API key, or encryption secret is written to Git or the installer log."
 
   prompt_password "Wazuh dashboard admin password (username: ${WAZUH_ADMIN_USER})" WAZUH_ADMIN_PASSWORD
