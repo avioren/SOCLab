@@ -1,6 +1,6 @@
 # Testing and GitLab CI
 
-GitLab CI has five stages: `security`, `lint`, `test`, `docs`, and `integration`.
+GitLab CI has four stages: `security`, `lint`, `test`, and `docs`. They run on GitLab-hosted runners; no self-hosted runner is required.
 
 ## Lint
 
@@ -20,6 +20,8 @@ Bats tests enforce the installer contracts that have already caused real failure
 - Runtime credentials are prompted rather than committed.
 - The local credential inventory remains mode `600`.
 - Compose validation does not render interpolated secrets into temporary files.
+- GitLab CI does not depend on a self-hosted `soclab-integration` runner.
+- The local `verify` command remains available for end-to-end lab checks.
 
 Run locally:
 
@@ -27,9 +29,24 @@ Run locally:
 bats tests
 ```
 
-## Integration test
+## Local integration verification
 
-`integration_smoke` is manual and requires a dedicated GitLab Runner tagged `soclab-integration` attached to a machine where this lab is already installed. It runs the real healthcheck without making normal pipelines spend time or resources starting Wazuh and Shuffle.
+The real Wazuh + Shuffle integration test runs on the WSL lab itself instead of in GitLab CI:
+
+```bash
+./install.sh verify
+```
+
+This checks the installed Wazuh indexer, manager, dashboard, indexer Security endpoint, Wazuh HTTPS/API reachability, stored runtime credentials where available, Shuffle frontend, and Shuffle OpenSearch authentication where directly exposed.
+
+Use a full clean deployment when you want to prove reproducibility from scratch:
+
+```bash
+sudo ./install.sh install
+./install.sh verify
+```
+
+Keeping this local avoids operating a GitLab Runner and prevents routine commits from rebuilding or wiping the interview lab.
 
 ## Secret-safety gate
 
