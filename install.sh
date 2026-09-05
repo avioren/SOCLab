@@ -30,11 +30,16 @@ WAZUH_DASHBOARD_SERVICE_USER="kibanaserver"
 WAZUH_DASHBOARD_SERVICE_PASSWORD=""
 WAZUH_API_USER="wazuh-wui"
 WAZUH_API_PASSWORD=""
+WAZUH_DASHBOARD_BROWSER_URL=""
 SHUFFLE_ADMIN_USERNAME="admin@soclab.local"
 SHUFFLE_ADMIN_PASSWORD=""
 SHUFFLE_OPENSEARCH_PASSWORD=""
 SHUFFLE_API_KEY=""
 SHUFFLE_ENCRYPTION_MODIFIER=""
+SHUFFLE_DETECTED_URL=""
+SHUFFLE_BROWSER_URL=""
+SHUFFLE_API_BASE_URL=""
+SHUFFLE_LOGIN_COOKIE_FILE=""
 
 exec > >(tee -a "$LOG") 2>&1
 log()  { printf '[%s] %s\n' "$(date '+%F %T')" "$*"; }
@@ -58,6 +63,8 @@ source "$SCRIPT_DIR/lib/wazuh.sh"
 source "$SCRIPT_DIR/lib/shuffle.sh"
 # shellcheck source=lib/healthcheck.sh
 source "$SCRIPT_DIR/lib/healthcheck.sh"
+# shellcheck source=lib/verified_credentials.sh
+source "$SCRIPT_DIR/lib/verified_credentials.sh"
 
 install_all() {
   need_root
@@ -68,7 +75,6 @@ install_all() {
 
   collect_runtime_credentials
   clean_lab
-  write_credentials_file
 
   phase "HOST PREPARATION"
   install_prereqs
@@ -158,7 +164,18 @@ install_all() {
   ok "WAZUH ${WAZUH_VERSION} PASSED ALL HEALTH GATES"
 
   install_shuffle
+  collect_browser_urls
   final_health
+  verify_live_user_credentials
+
+  # The local credential inventory is deliberately the final artifact. It is
+  # never written with guessed/default values before authentication succeeds.
+  write_credentials_file
+  if ! healthcheck_all; then
+    rm -f "$STATE_DIR/credentials.txt"
+    die "Stored-credential verification failed; credential inventory was removed rather than leaving incorrect values."
+  fi
+
   print_report
 }
 
@@ -167,7 +184,7 @@ usage() {
 Usage: sudo ./install.sh <command>
 
 Commands:
-  install       Full clean install of Wazuh ${WAZUH_VERSION} + Shuffle
+  install       Full clean install of Wazuh ${WAZUH_VERSION} + Shuffle; prompts for UI credentials and URLs
   healthcheck   Run reusable end-to-end healthcheck
   verify        Run the full local integration verification (alias of healthcheck)
   status        Show Docker Compose status and lab URLs
