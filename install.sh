@@ -169,6 +169,7 @@ Usage: sudo ./install.sh <command>
 Commands:
   install       Full clean install of Wazuh ${WAZUH_VERSION} + Shuffle
   healthcheck   Run reusable end-to-end healthcheck
+  verify        Run the full local integration verification (alias of healthcheck)
   status        Show Docker Compose status and lab URLs
   logs [target] Show last 300 log lines; target: wazuh|shuffle|all
   reset         Remove only SOC-lab-owned state
@@ -190,7 +191,7 @@ dispatch() {
   shift || true
   case "$cmd" in
     install) install_all "$@" ;;
-    healthcheck|health) healthcheck_all "$@" ;;
+    healthcheck|health|verify) healthcheck_all "$@" ;;
     status) status_all "$@" ;;
     logs) logs_cmd "$@" ;;
     reset|clean) reset_cmd "$@" ;;
