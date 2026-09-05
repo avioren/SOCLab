@@ -102,24 +102,55 @@ EOF
   ok "Fresh Wazuh TLS certificates generated without modifying credentials"
 }
 
-# Read exactly what the pinned upstream Compose model will use. Nothing is
-# changed or written back to the Wazuh source tree.
+read_wazuh_api_password_from_dashboard_config() {
+  local file="$WAZUH_SINGLE/config/wazuh_dashboard/wazuh.yml"
+  [[ -f "$file" ]] || return 0
+  python3 - "$file" <<'PY'
+import re, sys
+p = sys.argv[1]
+lines = open(p, encoding='utf-8').read().splitlines()
+for i, line in enumerate(lines):
+    if re.match(r'^\s*username:\s*["\x27]?wazuh-wui["\x27]?\s*$', line):
+        for candidate in lines[i + 1:i + 12]:
+            if re.match(r'^\s*username\s*:', candidate):
+                break
+            m = re.match(r'^\s*password:\s*["\x27]?(.*?)["\x27]?\s*$', candidate)
+            if m and m.group(1):
+                print(m.group(1))
+                raise SystemExit(0)
+raise SystemExit(0)
+PY
+}
+
+# Read exactly what the pinned upstream Compose/config model will use. Nothing
+# is changed or written back to the Wazuh source tree.
 capture_wazuh_stock_credentials() {
-  local cfg
+  local cfg config_api_password
   log "Reading stock beta5 credentials from the rendered Compose model (values are not logged)"
   cfg="$(cd "$WAZUH_SINGLE" && docker compose config --format json)" || \
     die "Could not render Wazuh Compose config as JSON."
 
-  WAZUH_ADMIN_USER="$(printf '%s' "$cfg" | jq -r '.services["wazuh.manager"].environment.INDEXER_USERNAME // "admin"')"
-  WAZUH_ADMIN_PASSWORD="$(printf '%s' "$cfg" | jq -r '.services["wazuh.manager"].environment.INDEXER_PASSWORD // empty')"
+  WAZUH_ADMIN_USER="$(printf '%s' "$cfg" | jq -r '.services["wazuh.manager"].environment.INDEXER_USERNAME // .services["wazuh.dashboard"].environment.INDEXER_USERNAME // "admin"')"
+  WAZUH_ADMIN_PASSWORD="$(printf '%s' "$cfg" | jq -r '.services["wazuh.manager"].environment.INDEXER_PASSWORD // .services["wazuh.dashboard"].environment.INDEXER_PASSWORD // empty')"
   WAZUH_DASHBOARD_SERVICE_USER="$(printf '%s' "$cfg" | jq -r '.services["wazuh.dashboard"].environment.DASHBOARD_USERNAME // "kibanaserver"')"
   WAZUH_DASHBOARD_SERVICE_PASSWORD="$(printf '%s' "$cfg" | jq -r '.services["wazuh.dashboard"].environment.DASHBOARD_PASSWORD // empty')"
-  WAZUH_API_USER="$(printf '%s' "$cfg" | jq -r '.services["wazuh.manager"].environment.API_USERNAME // .services["wazuh.dashboard"].environment.API_USERNAME // "wazuh-wui"')"
-  WAZUH_API_PASSWORD="$(printf '%s' "$cfg" | jq -r '.services["wazuh.manager"].environment.API_PASSWORD // .services["wazuh.dashboard"].environment.API_PASSWORD // empty')"
+  WAZUH_API_USER="$(printf '%s' "$cfg" | jq -r '.services["wazuh.manager"].environment.API_USERNAME // .services["wazuh.dashboard"].environment.API_USERNAME // .services["wazuh.manager"].environment.WAZUH_API_USERNAME // .services["wazuh.dashboard"].environment.WAZUH_API_USERNAME // "wazuh-wui"')"
+  WAZUH_API_PASSWORD="$(printf '%s' "$cfg" | jq -r '.services["wazuh.manager"].environment.API_PASSWORD // .services["wazuh.dashboard"].environment.API_PASSWORD // .services["wazuh.manager"].environment.WAZUH_API_PASSWORD // .services["wazuh.dashboard"].environment.WAZUH_API_PASSWORD // empty')"
   unset cfg
 
   [[ -n "$WAZUH_ADMIN_PASSWORD" ]] || die "Could not discover stock beta5 INDEXER_PASSWORD."
   [[ -n "$WAZUH_DASHBOARD_SERVICE_PASSWORD" ]] || die "Could not discover stock beta5 DASHBOARD_PASSWORD."
-  [[ -n "$WAZUH_API_PASSWORD" ]] || die "Could not discover stock beta5 API_PASSWORD."
+
+  if [[ -z "$WAZUH_API_PASSWORD" ]]; then
+    config_api_password="$(read_wazuh_api_password_from_dashboard_config || true)"
+    [[ -n "$config_api_password" ]] && WAZUH_API_PASSWORD="$config_api_password"
+    unset config_api_password
+  fi
+
+  if [[ -n "$WAZUH_API_PASSWORD" ]]; then
+    ok "Stock Wazuh API credential discovered in upstream configuration"
+  else
+    warn "Pinned beta5 does not expose a stock API password through Compose or wazuh.yml; standalone API credential verification will be skipped."
+  fi
   ok "Stock Wazuh credentials captured in memory without modification"
 }
