@@ -30,8 +30,8 @@ write_credentials_file() {
   chmod 600 "$tmp"
   cat >"$tmp" <<EOF
 # SOC Lab runtime credentials - LOCAL FILE, NEVER COMMIT TO GIT
-# Values below are the stock/default credentials discovered from the upstream
-# rendered Compose models. The installer does not change passwords.
+# Values below are stock/default credentials discovered from upstream runtime
+# configuration. The installer does not change passwords.
 # Written after service verification on $(date -Is)
 WAZUH_VERSION=${WAZUH_VERSION}
 WAZUH_DASHBOARD_URL=${WAZUH_DASHBOARD_BROWSER_URL}
@@ -44,12 +44,17 @@ WAZUH_DASHBOARD_SERVICE_USERNAME=${WAZUH_DASHBOARD_SERVICE_USER}
 WAZUH_DASHBOARD_SERVICE_PASSWORD=${WAZUH_DASHBOARD_SERVICE_PASSWORD}
 WAZUH_API_URL=https://localhost:55000
 WAZUH_API_USERNAME=${WAZUH_API_USER}
-WAZUH_API_PASSWORD=${WAZUH_API_PASSWORD}
 SHUFFLE_URL=${SHUFFLE_BROWSER_URL}
 SHUFFLE_API_URL=${SHUFFLE_API_BASE_URL:-${SHUFFLE_DETECTED_URL}}/api/v1
 SHUFFLE_OPENSEARCH_URL=https://localhost:${SHUFFLE_OPENSEARCH_PORT}
 SHUFFLE_OPENSEARCH_USERNAME=admin
 EOF
+
+  if [[ -n "${WAZUH_API_PASSWORD:-}" ]]; then
+    printf 'WAZUH_API_PASSWORD=%s\n' "$WAZUH_API_PASSWORD" >>"$tmp"
+  else
+    printf 'WAZUH_API_CREDENTIAL_STATUS=stock_api_password_not_exposed_by_pinned_beta5\n' >>"$tmp"
+  fi
 
   if [[ -n "${SHUFFLE_ADMIN_USERNAME:-}" && -n "${SHUFFLE_ADMIN_PASSWORD:-}" ]]; then
     printf 'SHUFFLE_UI_USERNAME=%s\n' "$SHUFFLE_ADMIN_USERNAME" >>"$tmp"
