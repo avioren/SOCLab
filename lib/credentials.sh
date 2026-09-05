@@ -1,12 +1,26 @@
 #!/usr/bin/env bash
 # shellcheck shell=bash
 
-password_policy_ok() {
+base_password_policy_ok() {
   local value="${1:-}"
   (( ${#value} >= 8 && ${#value} <= 64 )) || return 1
   [[ "$value" =~ [A-Z] ]] || return 1
   [[ "$value" =~ [a-z] ]] || return 1
   [[ "$value" =~ [0-9] ]] || return 1
+}
+
+# Wazuh's documented indexer password tool accepts these special characters.
+wazuh_password_policy_ok() {
+  local value="${1:-}"
+  base_password_policy_ok "$value" || return 1
+  printf '%s' "$value" | grep -qE '[.*+?-]' || return 1
+  printf '%s' "$value" | grep -qE '^[A-Za-z0-9.*+?-]+$' || return 1
+}
+
+# Shuffle is not constrained by the Wazuh indexer tool, so keep ! available.
+shuffle_password_policy_ok() {
+  local value="${1:-}"
+  base_password_policy_ok "$value" || return 1
   printf '%s' "$value" | grep -qE '[!.*+?-]' || return 1
   printf '%s' "$value" | grep -qE '^[A-Za-z0-9!.*+?-]+$' || return 1
 }
@@ -39,12 +53,13 @@ read_password_masked() {
   unset char value
 }
 
-prompt_password() {
-  local label="$1" outvar="$2" first second
+prompt_password_with_policy() {
+  local label="$1" outvar="$2" policy_fn="$3" policy_message="$4"
+  local first second
   while true; do
     read_password_masked "$label: " first
-    if ! password_policy_ok "$first"; then
-      printf 'Password must be 8-64 characters and contain uppercase, lowercase, number, and one of . * + ? - !\n' >/dev/tty
+    if ! "$policy_fn" "$first"; then
+      printf '%s\n' "$policy_message" >/dev/tty
       continue
     fi
     read_password_masked "Confirm $label: " second
@@ -58,10 +73,18 @@ prompt_password() {
   done
 }
 
-generate_password() {
+generate_wazuh_password() {
   local outvar="$1" value
   value="A1.$(openssl rand -hex 14)a"
-  password_policy_ok "$value" || die "Internal password generation failed policy validation."
+  wazuh_password_policy_ok "$value" || die "Internal Wazuh password generation failed policy validation."
+  printf -v "$outvar" '%s' "$value"
+  unset value
+}
+
+generate_shuffle_password() {
+  local outvar="$1" value
+  value="A1.$(openssl rand -hex 14)a"
+  shuffle_password_policy_ok "$value" || die "Internal Shuffle password generation failed policy validation."
   printf -v "$outvar" '%s' "$value"
   unset value
 }
@@ -86,17 +109,26 @@ collect_runtime_credentials() {
   log "Password fields are masked with * characters. Username/email and URL fields remain visible."
   log "No password, token, API key, or encryption secret is written to Git or the installer log."
 
-  prompt_password "Wazuh dashboard admin password (username: ${WAZUH_ADMIN_USER})" WAZUH_ADMIN_PASSWORD
+  prompt_password_with_policy \
+    "Wazuh dashboard admin password (username: ${WAZUH_ADMIN_USER})" \
+    WAZUH_ADMIN_PASSWORD \
+    wazuh_password_policy_ok \
+    "Wazuh password must be 8-64 characters with uppercase, lowercase, number, and one of . * + ? - (Wazuh native tool policy)."
 
   local entered_user
   IFS= read -r -p "Shuffle admin username/email [$SHUFFLE_ADMIN_USERNAME]: " entered_user </dev/tty
   [[ -n "$entered_user" ]] && SHUFFLE_ADMIN_USERNAME="$entered_user"
   [[ "$SHUFFLE_ADMIN_USERNAME" =~ ^[A-Za-z0-9._+@-]+$ ]] || die "Shuffle username contains unsupported characters."
-  prompt_password "Shuffle UI admin password" SHUFFLE_ADMIN_PASSWORD
 
-  generate_password WAZUH_DASHBOARD_SERVICE_PASSWORD
-  generate_password WAZUH_API_PASSWORD
-  generate_password SHUFFLE_OPENSEARCH_PASSWORD
+  prompt_password_with_policy \
+    "Shuffle UI admin password" \
+    SHUFFLE_ADMIN_PASSWORD \
+    shuffle_password_policy_ok \
+    "Shuffle password must be 8-64 characters with uppercase, lowercase, number, and one of . * + ? - !"
+
+  generate_wazuh_password WAZUH_DASHBOARD_SERVICE_PASSWORD
+  generate_wazuh_password WAZUH_API_PASSWORD
+  generate_shuffle_password SHUFFLE_OPENSEARCH_PASSWORD
   SHUFFLE_ENCRYPTION_MODIFIER="$(openssl rand -hex 32)"
   SHUFFLE_API_KEY=""
 
