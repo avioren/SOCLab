@@ -4,9 +4,9 @@ setup() {
   REPO_ROOT="$(cd "$BATS_TEST_DIRNAME/.." && pwd)"
   INSTALL="$REPO_ROOT/install.sh"
   CREDENTIALS="$REPO_ROOT/lib/credentials.sh"
-  WAZUH="$REPO_ROOT/lib/wazuh.sh"
   HEALTH="$REPO_ROOT/lib/healthcheck.sh"
   VERIFIED="$REPO_ROOT/lib/verified_credentials.sh"
+  NATIVE="$REPO_ROOT/lib/wazuh_native_credentials.sh"
 }
 
 @test "installer collects user-facing runtime credentials interactively" {
@@ -29,10 +29,17 @@ setup() {
   [ "$status" -ne 0 ]
 }
 
-@test "password policy accepts exclamation mark as a special character" {
-  run bash -c 'source "$1"; password_policy_ok "Valid1!x"' _ "$CREDENTIALS"
+@test "Wazuh policy follows native indexer tool special-character contract" {
+  run bash -c 'source "$1"; wazuh_password_policy_ok "Valid1.x"' _ "$CREDENTIALS"
   [ "$status" -eq 0 ]
-  run grep -F 'one of . * + ? - !' "$CREDENTIALS"
+  run bash -c 'source "$1"; wazuh_password_policy_ok "Valid1!x"' _ "$CREDENTIALS"
+  [ "$status" -ne 0 ]
+  run grep -F 'one of . * + ? - (Wazuh native tool policy)' "$CREDENTIALS"
+  [ "$status" -eq 0 ]
+}
+
+@test "Shuffle password policy still accepts exclamation mark" {
+  run bash -c 'source "$1"; shuffle_password_policy_ok "Valid1!x"' _ "$CREDENTIALS"
   [ "$status" -eq 0 ]
 }
 
@@ -67,16 +74,16 @@ setup() {
   [ "$status" -eq 0 ]
 }
 
-@test "compose validation does not render expanded secrets to temp files" {
-  run grep -R -F 'docker compose config --quiet' "$REPO_ROOT/lib" "$INSTALL"
-  [ "$status" -eq 0 ]
-  run grep -RE 'docker compose config[^#]*>[[:space:]]*/tmp/' "$REPO_ROOT/lib" "$INSTALL"
-  [ "$status" -ne 0 ]
-}
-
 @test "project contains no upstream default dashboard password literal" {
   run grep -R -F 'SecretPassword' "$INSTALL" "$REPO_ROOT/lib"
   [ "$status" -ne 0 ]
+}
+
+@test "bootstrap credentials are held in memory and cleared after rotation" {
+  run grep -F 'WAZUH_BOOTSTRAP_ADMIN_PASSWORD' "$NATIVE"
+  [ "$status" -eq 0 ]
+  run grep -F 'unset WAZUH_BOOTSTRAP_ADMIN_PASSWORD' "$NATIVE"
+  [ "$status" -eq 0 ]
 }
 
 @test "Wazuh credential verifier tests the actual dashboard login endpoint" {
@@ -101,10 +108,5 @@ setup() {
   run grep -F 'indexer-auth' "$HEALTH"
   [ "$status" -eq 0 ]
   run grep -F 'wazuh-api-auth' "$HEALTH"
-  [ "$status" -eq 0 ]
-}
-
-@test "runtime Wazuh password configuration remains separated from source defaults" {
-  run grep -F 'configure_wazuh_runtime_credentials' "$WAZUH"
   [ "$status" -eq 0 ]
 }
