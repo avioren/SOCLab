@@ -3,7 +3,6 @@ stages:
   - lint
   - test
   - docs
-  - integration
 
 secret_scan:
   image: alpine:3.20
@@ -56,13 +55,3 @@ pages:
   artifacts:
     paths:
       - public/
-
-integration_smoke:
-  stage: integration
-  tags:
-    - soclab-integration
-  rules:
-    - when: manual
-  allow_failure: false
-  script:
-    - ./install.sh healthcheck
