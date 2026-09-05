@@ -29,6 +29,13 @@ setup() {
   [ "$status" -ne 0 ]
 }
 
+@test "password policy accepts exclamation mark as a special character" {
+  run bash -c 'source "$1"; password_policy_ok "Valid1!x"' _ "$CREDENTIALS"
+  [ "$status" -eq 0 ]
+  run grep -F 'one of . * + ? - !' "$CREDENTIALS"
+  [ "$status" -eq 0 ]
+}
+
 @test "browser URLs are confirmed interactively and remain visible" {
   run grep -F 'collect_browser_urls' "$INSTALL"
   [ "$status" -eq 0 ]
