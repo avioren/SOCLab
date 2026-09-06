@@ -6,19 +6,25 @@
 # host port so both products can coexist on the same Docker Desktop daemon.
 WAZUH_AGENT_PORT="${WAZUH_AGENT_PORT:-15140}"
 
-# Wazuh's REST API defaults to TCP/55000 upstream, but the API port is a
-# supported configuration option. Windows/HNS can reserve 55000, so this lab
-# configures the actual Wazuh API listener (not only Docker NAT) on TCP/15500.
-WAZUH_API_PORT="${WAZUH_API_PORT:-15500}"
+# Proven Wazuh 5.0.0-beta5 contract:
+#   dashboard/container network -> https://wazuh.manager:55000
+#   host/WSL diagnostics        -> https://localhost:15500
+# Keep the upstream/default Wazuh API listener on internal TCP/55000 and only
+# translate the host-facing loopback port away from 55000 to avoid Windows/HNS
+# reservations and local collisions.
+WAZUH_API_HOST_PORT="${WAZUH_API_HOST_PORT:-${WAZUH_API_PORT:-15500}}"
+WAZUH_API_PORT="$WAZUH_API_HOST_PORT"
+WAZUH_API_INTERNAL_PORT="${WAZUH_API_INTERNAL_PORT:-55000}"
 
 patch_wazuh_dashboard_port() {
   local compose="$WAZUH_SINGLE/docker-compose.yml"
-  python3 - "$compose" "$WAZUH_DASHBOARD_PORT" "$WAZUH_AGENT_PORT" "$WAZUH_API_PORT" <<'PY'
+  python3 - "$compose" "$WAZUH_DASHBOARD_PORT" "$WAZUH_AGENT_PORT" "$WAZUH_API_PORT" "$WAZUH_API_INTERNAL_PORT" <<'PY'
 import pathlib, re, sys
 p = pathlib.Path(sys.argv[1])
 dashboard_port = sys.argv[2]
 agent_port = sys.argv[3]
-api_port = sys.argv[4]
+api_host_port = sys.argv[4]
+api_internal_port = sys.argv[5]
 text = p.read_text()
 
 # Dashboard host mapping: host WAZUH_DASHBOARD_PORT -> container 5601.
@@ -36,18 +42,20 @@ text = re.sub(r'(?m)^(\s*-\s*)"?0\.0\.0\.0:1514:1514"?\s*$', rf'\1"0.0.0.0:{agen
 if text == before_agent and f"{agent_port}:1514" not in text:
     raise SystemExit("Could not locate Wazuh agent host port mapping 1514:1514")
 
-# The manager itself will be configured to listen on api_port. Publish that
-# same port on loopback; this is intentionally not host-port translation.
+# Keep the manager API on the Wazuh beta5 internal/default TCP/55000 because
+# the dashboard GUI stores and uses https://wazuh.manager:55000. Publish only a
+# host-side loopback translation so Windows/WSL users can reach it on 15500.
 before_api = text
 api_patterns = [
     r'(?m)^(\s*-\s*)"?55000:55000"?\s*$',
     r'(?m)^(\s*-\s*)"?0\.0\.0\.0:55000:55000"?\s*$',
     r'(?m)^(\s*-\s*)"?127\.0\.0\.1:55000:55000"?\s*$',
+    r'(?m)^(\s*-\s*)"?127\.0\.0\.1:15500:15500"?\s*$',
 ]
 for pattern in api_patterns:
-    text = re.sub(pattern, rf'\1"127.0.0.1:{api_port}:{api_port}"', text)
-if text == before_api and f"127.0.0.1:{api_port}:{api_port}" not in text:
-    raise SystemExit("Could not locate Wazuh API host port mapping 55000:55000")
+    text = re.sub(pattern, rf'\1"127.0.0.1:{api_host_port}:{api_internal_port}"', text)
+if text == before_api and f"127.0.0.1:{api_host_port}:{api_internal_port}" not in text:
+    raise SystemExit("Could not locate Wazuh API host port mapping")
 
 p.write_text(text)
 PY
@@ -58,10 +66,10 @@ PY
     die "Wazuh still publishes host TCP/1514; this would conflict with Shuffle/Tenzir."
   fi
 
-  grep -Fq "127.0.0.1:${WAZUH_API_PORT}:${WAZUH_API_PORT}" "$compose" || \
-    die "Wazuh API Compose mapping must be host/container TCP/${WAZUH_API_PORT} on loopback."
+  grep -Fq "127.0.0.1:${WAZUH_API_PORT}:${WAZUH_API_INTERNAL_PORT}" "$compose" || \
+    die "Wazuh API Compose mapping must be host TCP/${WAZUH_API_PORT} to container TCP/${WAZUH_API_INTERNAL_PORT} on loopback."
   if grep -Eq '(^|[^0-9])55000:55000([^0-9]|$)' "$compose"; then
-    die "Wazuh Compose still publishes the upstream default TCP/55000."
+    die "Wazuh Compose still publishes host TCP/55000 directly."
   fi
 
   grep -Eq '(^|[^0-9])1515:1515([^0-9]|$)' "$compose" || die "Wazuh enrollment TCP/1515 mapping is missing."
@@ -69,7 +77,7 @@ PY
 
   ok "Wazuh dashboard mapped to https://localhost:${WAZUH_DASHBOARD_PORT}"
   ok "Wazuh agent mapped to host TCP/${WAZUH_AGENT_PORT} -> container TCP/1514; host TCP/1514 reserved for Shuffle/Tenzir"
-  ok "Wazuh API Docker mapping set to 127.0.0.1:${WAZUH_API_PORT} -> container TCP/${WAZUH_API_PORT}"
+  ok "Wazuh API Docker mapping set to 127.0.0.1:${WAZUH_API_PORT} -> container TCP/${WAZUH_API_INTERNAL_PORT}"
 }
 
 # configure_wazuh_api_runtime and verify_wazuh_api_runtime_configuration are
