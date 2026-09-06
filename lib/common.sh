@@ -61,14 +61,14 @@ Wazuh syslog|0.0.0.0|514|udp|514
 Shuffle/Tenzir syslog|0.0.0.0|1514|tcp|1514
 Wazuh enrollment|0.0.0.0|1515|tcp|1515
 Wazuh agent events|0.0.0.0|${WAZUH_AGENT_PORT:-15140}|tcp|1514
-Shuffle frontend HTTP|0.0.0.0|${SHUFFLE_FRONTEND_PORT:-3001}|tcp|80
+Shuffle frontend HTTP compatibility|0.0.0.0|${SHUFFLE_FRONTEND_PORT:-3001}|tcp|80
 Shuffle frontend HTTPS|0.0.0.0|${SHUFFLE_HTTPS_PORT:-3443}|tcp|443
 Shuffle backend API|0.0.0.0|${SHUFFLE_BACKEND_PORT:-5001}|tcp|5001
 Shuffle/Tenzir API|0.0.0.0|5160|tcp|5160
 Wazuh dashboard|0.0.0.0|${WAZUH_DASHBOARD_PORT:-8443}|tcp|5601
 Wazuh indexer|0.0.0.0|9200|tcp|9200
 Shuffle OpenSearch|127.0.0.1|${SHUFFLE_OPENSEARCH_PORT:-9201}|tcp|9200
-Wazuh API|127.0.0.1|${WAZUH_API_PORT:-15500}|tcp|${WAZUH_API_PORT:-15500}
+Wazuh API|127.0.0.1|${WAZUH_API_PORT:-15500}|tcp|${WAZUH_API_INTERNAL_PORT:-55000}
 EOF
 }
 
@@ -189,7 +189,7 @@ PY
 
 preflight_soclab_ports() {
   phase "PORT CONTRACT PREFLIGHT - WAZUH + SHUFFLE + TENZIR + SWARM"
-  log "Wazuh API is configured to listen on TCP/${WAZUH_API_PORT:-15500}; upstream default TCP/55000 is not used by SOCLab."
+  log "Wazuh API uses HTTPS internally on TCP/${WAZUH_API_INTERNAL_PORT:-55000}; host access is remapped to HTTPS TCP/${WAZUH_API_PORT:-15500}."
   validate_soclab_port_contract
   probe_soclab_swarm_ports
   probe_soclab_application_ports
