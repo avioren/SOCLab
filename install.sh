@@ -49,6 +49,16 @@ need_root() { [[ ${EUID:-$(id -u)} -eq 0 ]] || die "Run with sudo: sudo bash $0"
 have() { command -v "$1" >/dev/null 2>&1; }
 phase() { echo; log "============================================================"; log "$*"; log "============================================================"; }
 
+quiesce_shuffle_for_cleanup() {
+  # Orborus can recreate worker/app services while cleanup is in progress.
+  # Stop it first, but leave actual Compose container removal to clean_lab so
+  # all standalone endpoints are gone before the external overlay is removed.
+  if docker inspect shuffle-orborus >/dev/null 2>&1; then
+    log "Quiescing Shuffle Orborus before Compose/Swarm teardown"
+    docker stop shuffle-orborus >/dev/null 2>&1 || true
+  fi
+}
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/credentials.sh
 source "$SCRIPT_DIR/lib/credentials.sh"
@@ -74,9 +84,12 @@ install_all() {
   # Validate external release artifacts before destroying the working lab.
   preflight_shuffle_release
 
-  # Stop/remove the previous Shuffle execution plane before generic Compose cleanup.
-  cleanup_shuffle_swarm_runtime
+  # Teardown order matters: backend and Orborus are standalone Compose
+  # containers attached to shuffle_swarm_executions. Docker will not remove
+  # that overlay until those endpoints are gone.
+  quiesce_shuffle_for_cleanup
   clean_lab
+  cleanup_shuffle_swarm_runtime
 
   phase "HOST PREPARATION"
   install_prereqs
