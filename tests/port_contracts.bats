@@ -59,7 +59,6 @@ setup() {
   run bash -c '
     cfg="$1"; port=55000; out="${cfg}.out"
     grep -Ev "^[[:space:]]*(host|port):" "$cfg" >"$out" || true
-    printf "\n"
     {
       printf "\n"
       printf "host: [\"0.0.0.0\", \"::\"]\n"
@@ -76,12 +75,14 @@ setup() {
   [ "$status" -eq 0 ]
 }
 
-@test "host runtime URLs use HTTPS on remapped Wazuh API port" {
+@test "published Wazuh and browser URLs use HTTPS" {
   run grep -F 'https://localhost:${WAZUH_API_PORT}' "$INSTALL" "$HEALTH" "$CREDS"
   [ "$status" -eq 0 ]
   run grep -R -F 'https://localhost:55000' "$INSTALL" "$HEALTH" "$CREDS"
   [ "$status" -ne 0 ]
-  run grep -F 'http://localhost:${SHUFFLE_FRONTEND_PORT}' "$CREDS" "$HEALTH"
+  run grep -F 'SHUFFLE_BROWSER_URL="${SHUFFLE_DETECTED_URL:-https://localhost:${SHUFFLE_HTTPS_PORT}}"' "$CREDS"
+  [ "$status" -eq 0 ]
+  run grep -F 'http://localhost:${SHUFFLE_FRONTEND_PORT}' "$CREDS"
   [ "$status" -ne 0 ]
 }
 
