@@ -1,21 +1,46 @@
 #!/usr/bin/env bash
 # shellcheck shell=bash
 
+# Shuffle's built-in Tenzir/Sigma runtime publishes host TCP/1514. Keep Wazuh
+# listening on its normal container port 1514, but publish it on a distinct
+# host port so both products can coexist on the same Docker Desktop daemon.
+WAZUH_AGENT_PORT="${WAZUH_AGENT_PORT:-15140}"
+
 patch_wazuh_dashboard_port() {
   local compose="$WAZUH_SINGLE/docker-compose.yml"
-  python3 - "$compose" "$WAZUH_DASHBOARD_PORT" <<'PY'
+  python3 - "$compose" "$WAZUH_DASHBOARD_PORT" "$WAZUH_AGENT_PORT" <<'PY'
 import pathlib, re, sys
 p = pathlib.Path(sys.argv[1])
-port = sys.argv[2]
+dashboard_port = sys.argv[2]
+agent_port = sys.argv[3]
 text = p.read_text()
+
+# Dashboard host mapping: host WAZUH_DASHBOARD_PORT -> container 5601.
 before = text
-text = re.sub(r'(?m)^(\s*-\s*)"?443:5601"?\s*$', rf'\1"{port}:5601"', text)
-text = re.sub(r'(?m)^(\s*-\s*)"?0\.0\.0\.0:443:5601"?\s*$', rf'\1"0.0.0.0:{port}:5601"', text)
-if text == before and f"{port}:5601" not in text:
+text = re.sub(r'(?m)^(\s*-\s*)"?443:5601"?\s*$', rf'\1"{dashboard_port}:5601"', text)
+text = re.sub(r'(?m)^(\s*-\s*)"?0\.0\.0\.0:443:5601"?\s*$', rf'\1"0.0.0.0:{dashboard_port}:5601"', text)
+if text == before and f"{dashboard_port}:5601" not in text:
     raise SystemExit("Could not locate dashboard host port mapping 443:5601")
+
+# Wazuh agent traffic remains container TCP/1514, but host TCP/1514 is
+# reserved for Shuffle/Tenzir in this single-host lab.
+before_agent = text
+text = re.sub(r'(?m)^(\s*-\s*)"?1514:1514"?\s*$', rf'\1"{agent_port}:1514"', text)
+text = re.sub(r'(?m)^(\s*-\s*)"?0\.0\.0\.0:1514:1514"?\s*$', rf'\1"0.0.0.0:{agent_port}:1514"', text)
+if text == before_agent and f"{agent_port}:1514" not in text:
+    raise SystemExit("Could not locate Wazuh agent host port mapping 1514:1514")
+
 p.write_text(text)
 PY
+
+  grep -Eq "(^|[^0-9])${WAZUH_AGENT_PORT}:1514([^0-9]|$)" "$compose" || \
+    die "Wazuh agent host-port remap ${WAZUH_AGENT_PORT}:1514 is missing after patch."
+  if grep -Eq '(^|[^0-9])1514:1514([^0-9]|$)' "$compose"; then
+    die "Wazuh still publishes host TCP/1514; this would conflict with Shuffle/Tenzir."
+  fi
+
   ok "Wazuh dashboard mapped to https://localhost:${WAZUH_DASHBOARD_PORT}"
+  ok "Wazuh agent mapped to host TCP/${WAZUH_AGENT_PORT} -> container TCP/1514; host TCP/1514 reserved for Shuffle/Tenzir"
 }
 
 detect_wazuh_image_accounts() {
