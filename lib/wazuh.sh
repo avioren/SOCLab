@@ -72,85 +72,10 @@ PY
   ok "Wazuh API Docker mapping set to 127.0.0.1:${WAZUH_API_PORT} -> container TCP/${WAZUH_API_PORT}"
 }
 
-configure_wazuh_api_runtime() {
-  [[ "$WAZUH_API_PORT" =~ ^[0-9]+$ ]] || die "WAZUH_API_PORT must be numeric."
-  (( WAZUH_API_PORT >= 1 && WAZUH_API_PORT <= 65535 )) || die "WAZUH_API_PORT must be between 1 and 65535."
-
-  phase "CONFIGURE WAZUH API TCP/${WAZUH_API_PORT}"
-
-  log "Configuring manager API listener in the persistent Wazuh API configuration volume"
-  if ! (cd "$WAZUH_SINGLE" && docker compose run --rm --no-deps \
-      -e "SOCLAB_WAZUH_API_PORT=${WAZUH_API_PORT}" \
-      --entrypoint sh wazuh.manager -lc '
-        set -eu
-        cfg=/var/wazuh-manager/api/configuration/api.yaml
-        test -f "$cfg" || { echo "Missing $cfg" >&2; exit 41; }
-        port="$SOCLAB_WAZUH_API_PORT"
-        if grep -Eq "^[[:space:]]*#?[[:space:]]*port:[[:space:]]*[0-9]+[[:space:]]*$" "$cfg"; then
-          sed -Ei "0,/^[[:space:]]*#?[[:space:]]*port:[[:space:]]*[0-9]+[[:space:]]*$/s//port: ${port}/" "$cfg"
-        else
-          printf "\nport: %s\n" "$port" >>"$cfg"
-        fi
-        grep -Eq "^[[:space:]]*port:[[:space:]]*${port}[[:space:]]*$" "$cfg"
-      '); then
-    die "Could not configure Wazuh manager API listener on TCP/${WAZUH_API_PORT}."
-  fi
-
-  log "Configuring Wazuh dashboard manager connection to TCP/${WAZUH_API_PORT}"
-  if ! (cd "$WAZUH_SINGLE" && docker compose run --rm --no-deps \
-      -e "SOCLAB_WAZUH_API_PORT=${WAZUH_API_PORT}" \
-      --entrypoint sh wazuh.dashboard -lc '
-        set -eu
-        cfg=/usr/share/wazuh-dashboard/config/opensearch_dashboards.yml
-        test -f "$cfg" || { echo "Missing $cfg" >&2; exit 42; }
-        port="$SOCLAB_WAZUH_API_PORT"
-        grep -Eq "^[[:space:]]*wazuh_core\.hosts:[[:space:]]*$" "$cfg" || {
-          echo "wazuh_core.hosts block missing from $cfg" >&2
-          exit 43
-        }
-        grep -Eq "^[[:space:]]*port:[[:space:]]*[0-9]+[[:space:]]*$" "$cfg" || {
-          echo "Wazuh API port field missing from dashboard configuration" >&2
-          exit 44
-        }
-        sed -Ei "0,/^([[:space:]]*)port:[[:space:]]*[0-9]+[[:space:]]*$/s//\1port: ${port}/" "$cfg"
-        grep -Eq "^[[:space:]]*port:[[:space:]]*${port}[[:space:]]*$" "$cfg"
-      '); then
-    die "Could not configure Wazuh dashboard to use manager API TCP/${WAZUH_API_PORT}."
-  fi
-
-  ok "Wazuh manager and dashboard runtime configuration prepared for API TCP/${WAZUH_API_PORT}"
-}
-
-verify_wazuh_api_runtime_configuration() {
-  local manager_id dashboard_id manager_code dashboard_code
-  manager_id="$(compose_service_id wazuh.manager)"
-  dashboard_id="$(compose_service_id wazuh.dashboard)"
-  [[ -n "$manager_id" && -n "$dashboard_id" ]] || die "Cannot verify Wazuh API runtime configuration; manager/dashboard container missing."
-
-  docker exec "$manager_id" sh -lc \
-    "grep -Eq '^[[:space:]]*port:[[:space:]]*${WAZUH_API_PORT}[[:space:]]*$' /var/wazuh-manager/api/configuration/api.yaml" || \
-    die "Running Wazuh manager API configuration is not set to TCP/${WAZUH_API_PORT}."
-
-  docker exec "$dashboard_id" sh -lc \
-    "grep -Eq '^[[:space:]]*wazuh_core\\.hosts:[[:space:]]*$' /usr/share/wazuh-dashboard/config/opensearch_dashboards.yml && grep -Eq '^[[:space:]]*port:[[:space:]]*${WAZUH_API_PORT}[[:space:]]*$' /usr/share/wazuh-dashboard/config/opensearch_dashboards.yml" || \
-    die "Running Wazuh dashboard configuration does not reference manager API TCP/${WAZUH_API_PORT}."
-
-  manager_code="$(docker exec "$manager_id" sh -lc \
-    "curl -ksS -o /dev/null -w '%{http_code}' --max-time 10 https://localhost:${WAZUH_API_PORT}/ || true" 2>/dev/null || true)"
-  case "$manager_code" in
-    200|401|403|404) ;;
-    *) die "Wazuh manager is not serving its API on internal TCP/${WAZUH_API_PORT} (HTTP ${manager_code:-none})." ;;
-  esac
-
-  dashboard_code="$(docker exec "$dashboard_id" sh -lc \
-    "curl -ksS -o /dev/null -w '%{http_code}' --max-time 10 https://wazuh.manager:${WAZUH_API_PORT}/ || true" 2>/dev/null || true)"
-  case "$dashboard_code" in
-    200|401|403|404) ;;
-    *) die "Wazuh dashboard cannot reach manager API on TCP/${WAZUH_API_PORT} (HTTP ${dashboard_code:-none})." ;;
-  esac
-
-  ok "Wazuh API is configured and reachable on TCP/${WAZUH_API_PORT} from manager, dashboard, and Docker network"
-}
+# configure_wazuh_api_runtime and verify_wazuh_api_runtime_configuration are
+# intentionally defined in lib/wazuh_dashboard_api_override.sh, which is sourced
+# by lib/wazuh_v3_certs.sh after this module. Keeping the API listener and
+# dashboard endpoint configuration in one module prevents path/port drift.
 
 detect_wazuh_image_accounts() {
   phase "DETECT WAZUH BETA5 CONTAINER USERS"
