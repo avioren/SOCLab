@@ -18,8 +18,6 @@ cleanup_shuffle_swarm_runtime() {
   local state net_id sid sname image deadline
   state="$(docker info --format '{{.Swarm.LocalNodeState}}' 2>/dev/null || echo inactive)"
 
-  # Stop Orborus first so it cannot recreate managed services while the
-  # dedicated execution plane is being reconciled.
   if docker inspect shuffle-orborus >/dev/null 2>&1; then
     docker stop shuffle-orborus >/dev/null 2>&1 || true
   fi
@@ -59,8 +57,6 @@ cleanup_shuffle_swarm_runtime() {
     fi
   fi
 
-  # Keep global Swarm membership intact; SOCLab owns only its worker/app
-  # services and dedicated execution overlay.
   if docker service inspect shuffle-workers >/dev/null 2>&1; then
     die "Residual shuffle-workers service remains after SOCLab cleanup."
   fi
@@ -70,8 +66,6 @@ cleanup_shuffle_swarm_runtime() {
 }
 
 generate_shuffle_opensearch_password() {
-  # OpenSearch 2.12+ enforces a strong initial admin password. Generate a
-  # high-entropy value with guaranteed upper/lower/digit/special characters.
   python3 - <<'PY'
 import secrets
 alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@%_-"
@@ -112,7 +106,6 @@ preflight_shuffle_release() {
 ensure_shuffle_swarm_prereqs() {
   phase "SHUFFLE SWARM PREREQUISITES"
 
-  # Shuffle/Docker overlay networking requires IPv4 forwarding.
   cat >/etc/sysctl.d/99-soclab-shuffle-swarm.conf <<'EOF'
 net.ipv4.ip_forward=1
 EOF
@@ -237,8 +230,6 @@ text = sub_required(
     r'(?m)^(\s*image:\s*)opensearchproject/opensearch:[^\s]+$',
     rf'\1{opensearch_image}', text, "OpenSearch image")
 
-# Wazuh owns host 9200. Shuffle OpenSearch remains on container 9200 and is
-# exposed only on loopback 9201 for health/diagnostics.
 text = sub_required(
     r'(?m)^(\s*-\s*)"?9200:9200"?\s*$',
     rf'\1"127.0.0.1:{os_port}:9200"', text, "OpenSearch host port")
@@ -260,8 +251,6 @@ def add_execution_network_to_service(data, service, next_service):
             raise SystemExit(f"Could not attach {service} to execution overlay")
     return data[:match.start(1)] + block + data[match.end(1):]
 
-# Workers/apps reach Backend over the execution overlay; Orborus must share it
-# with the worker service it creates/manages.
 text = add_execution_network_to_service(text, "backend", "orborus")
 text = add_execution_network_to_service(text, "orborus", "opensearch")
 
@@ -284,8 +273,6 @@ text = sub_required(
 p.write_text(text)
 PY
 
-  # Fail fast if the pinned upstream layout changes and our transformation is
-  # no longer safe.
   grep -qF "image: $SHUFFLE_FRONTEND_IMAGE" "$compose" || die "Frontend image pin missing after patch."
   grep -qF "image: $SHUFFLE_BACKEND_IMAGE" "$compose" || die "Backend image pin missing after patch."
   grep -qF "image: $SHUFFLE_ORBORUS_IMAGE" "$compose" || die "Orborus image pin missing after patch."
@@ -533,7 +520,7 @@ WAZUH_INDEXER_USERNAME=admin
 WAZUH_INDEXER_PASSWORD=admin
 WAZUH_DASHBOARD_SERVICE_USERNAME=kibanaserver
 WAZUH_DASHBOARD_SERVICE_PASSWORD=kibanaserver
-WAZUH_API_URL=https://localhost:55000
+WAZUH_API_URL=https://localhost:${WAZUH_API_PORT}
 WAZUH_API_USERNAME=wazuh
 WAZUH_API_PASSWORD=wazuh
 WAZUH_WUI_API_USERNAME=wazuh-wui
