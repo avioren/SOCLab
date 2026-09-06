@@ -12,10 +12,12 @@ The destructive reset is refused if the existing Swarm has more than one node or
 
 ## Wazuh dashboard API configuration path correction
 
-The Wazuh API remains configured on TCP/15500 and the SOCLab port topology is unchanged. This correction only changes which Wazuh dashboard configuration file is used to express that already-decided endpoint.
+The Wazuh API remains configured on TCP/15500 and the SOCLab port topology is unchanged. This correction only changes how the dashboard plugin configuration for that already-decided endpoint is provisioned.
 
-The Wazuh manager API listener remains configured in `/var/wazuh-manager/api/configuration/api.yaml`. The dashboard's Wazuh plugin manager/API endpoint is configured in `/usr/share/wazuh-dashboard/data/wazuh/config/wazuh.yml`, which is the plugin-specific configuration file. SOCLab patches the pinned `single-node/config/wazuh_dashboard/wazuh.yml` and bind-mounts it read-only into that runtime path so the beta5 image cannot regenerate the upstream default TCP/55000 endpoint.
+The Wazuh manager API listener remains configured in `/var/wazuh-manager/api/configuration/api.yaml`. The dashboard's Wazuh plugin manager/API endpoint belongs at `/usr/share/wazuh-dashboard/data/wazuh/config/wazuh.yml`.
 
-`opensearch_dashboards.yml` remains responsible for the dashboard/OpenSearch server configuration and is no longer used as the Wazuh manager API port assertion.
+The pinned Wazuh 5.0.0-beta5 Docker repository does not provide `single-node/config/wazuh_dashboard/wazuh.yml`, so SOCLab now generates a minimal plugin configuration using Wazuh's supported `hosts -> default -> url/port/username/password/run_as` schema. It targets `https://wazuh.manager` on TCP/15500 with the beta5 default `wazuh-wui` credentials, applies the detected dashboard UID/GID ownership, and bind-mounts the generated file read-only into the plugin runtime path.
+
+`opensearch_dashboards.yml` remains responsible for the dashboard/OpenSearch server configuration and is not used as the Wazuh manager API endpoint configuration.
 
 No Wazuh or Shuffle upstream source code is modified. The components, host ports, container ports, Docker networks, and dependency graph are unchanged by this correction.
