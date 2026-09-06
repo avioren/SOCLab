@@ -90,8 +90,6 @@ remove_shuffle_swarm_services_before_compose() {
     done
   fi
 
-  # Give Swarm time to remove task endpoints before Compose tries to delete
-  # shuffle_shuffle. This avoids the cross-management cleanup deadlock.
   deadline=$((SECONDS + 90))
   while (( SECONDS < deadline )); do
     local pending=0
@@ -111,9 +109,6 @@ remove_shuffle_swarm_services_before_compose() {
     sleep 2
   done
 
-  # Remove non-core standalone runtime containers (for example Tenzir) that
-  # can otherwise keep either SOCLab overlay busy. Core Compose containers are
-  # intentionally left for clean_lab() to remove normally.
   for net in shuffle_shuffle "$SHUFFLE_SWARM_NETWORK_NAME"; do
     docker network inspect "$net" >/dev/null 2>&1 || continue
     while read -r cid; do
@@ -136,8 +131,6 @@ remove_shuffle_execution_overlay_after_compose() {
 
   deadline=$((SECONDS + 90))
   while (( SECONDS < deadline )); do
-    # At this point Compose and Swarm services are already gone. Anything still
-    # attached to this dedicated SOCLab network is stale lab runtime state.
     while read -r cid; do
       [[ -n "$cid" ]] || continue
       cname="$(docker inspect -f '{{.Name}}' "$cid" 2>/dev/null | sed 's#^/##' || true)"
@@ -189,11 +182,6 @@ install_all() {
 
   preflight_shuffle_release
 
-  # Dependency-safe teardown:
-  # 1) stop Orborus so it cannot recreate services,
-  # 2) remove Swarm services/runtime endpoints,
-  # 3) remove Compose containers and their core network,
-  # 4) remove the dedicated execution overlay.
   quiesce_shuffle_for_cleanup
   remove_shuffle_swarm_services_before_compose
   clean_lab
@@ -231,6 +219,7 @@ install_all() {
   detect_wazuh_image_accounts
   generate_wazuh_certs_locally
   verify_wazuh_cert_mounts
+  configure_wazuh_api_runtime
 
   phase "PHASE 4/7 - START AND VERIFY WAZUH ${WAZUH_VERSION}"
 
@@ -254,6 +243,8 @@ install_all() {
     dump_wazuh_diagnostics
     die "Wazuh dashboard did not become healthy."
   }
+
+  verify_wazuh_api_runtime_configuration
 
   local indexer_id
   indexer_id="$(compose_service_id wazuh.indexer)"
@@ -295,10 +286,10 @@ install_all() {
   esac
 
   code="$(curl -ksS -o /tmp/soclab-wazuh-api-http.out \
-    -w '%{http_code}' --max-time 10 https://localhost:55000/ || true)"
+    -w '%{http_code}' --max-time 10 "https://localhost:${WAZUH_API_PORT}/" || true)"
   case "$code" in
-    200|401|403|404) ok "Wazuh API HTTPS listener reachable (HTTP $code)" ;;
-    *) dump_wazuh_diagnostics; die "Wazuh API listener failed (HTTP ${code:-none})." ;;
+    200|401|403|404) ok "Wazuh API HTTPS listener reachable on TCP/${WAZUH_API_PORT} (HTTP $code)" ;;
+    *) dump_wazuh_diagnostics; die "Wazuh API listener failed on TCP/${WAZUH_API_PORT} (HTTP ${code:-none})." ;;
   esac
 
   ok "WAZUH ${WAZUH_VERSION} PASSED ALL HEALTH GATES"
@@ -325,6 +316,7 @@ Commands:
 Environment overrides:
   SOCLAB_ROOT                    default: /opt/soclab
   WAZUH_DASHBOARD_PORT           default: 8443
+  WAZUH_API_PORT                 default: 15500 (actual Wazuh API listener and host port)
   SHUFFLE_VERSION                default: 2.2.1
   SHUFFLE_FRONTEND_PORT          default: 3001
   SHUFFLE_HTTPS_PORT             default: 3443
