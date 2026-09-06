@@ -1,26 +1,27 @@
 #!/usr/bin/env bash
 # shellcheck shell=bash
 
-# Wazuh Dashboard has two distinct API endpoint inputs:
-#   * WAZUH_API_URL is the manager base URL (scheme + host only)
-#   * wazuh.yml carries the API TCP port
-# Keep those semantics separate. Supplying a port in WAZUH_API_URL makes the
-# dashboard initializer append its own port and can create an invalid URL such
-# as https://wazuh.manager:15500:55000.
+# Wazuh 5.0.0-beta5 has two distinct API surfaces:
+#   * container-internal manager API: https://wazuh.manager:55000
+#   * host-facing loopback access:     https://localhost:15500 -> 55000
+# The dashboard GUI stores and uses the internal 55000 endpoint. Do not move the
+# manager process to 15500; only Docker publishes a host-side translation.
 configure_wazuh_api_runtime() {
   [[ "$WAZUH_API_PORT" =~ ^[0-9]+$ ]] || die "WAZUH_API_PORT must be numeric."
   (( WAZUH_API_PORT >= 1 && WAZUH_API_PORT <= 65535 )) || die "WAZUH_API_PORT must be between 1 and 65535."
+  [[ "$WAZUH_API_INTERNAL_PORT" =~ ^[0-9]+$ ]] || die "WAZUH_API_INTERNAL_PORT must be numeric."
+  (( WAZUH_API_INTERNAL_PORT >= 1 && WAZUH_API_INTERNAL_PORT <= 65535 )) || die "WAZUH_API_INTERNAL_PORT must be between 1 and 65535."
 
-  phase "CONFIGURE WAZUH API TCP/${WAZUH_API_PORT}"
+  phase "CONFIGURE WAZUH INTERNAL API TCP/${WAZUH_API_INTERNAL_PORT}"
 
   log "Configuring manager API listener in /var/wazuh-manager/api/configuration/api.yaml"
   if ! (cd "$WAZUH_SINGLE" && docker compose run --rm --no-deps \
-      -e "SOCLAB_WAZUH_API_PORT=${WAZUH_API_PORT}" \
+      -e "SOCLAB_WAZUH_API_INTERNAL_PORT=${WAZUH_API_INTERNAL_PORT}" \
       --entrypoint sh wazuh.manager -lc '
         set -eu
         cfg=/var/wazuh-manager/api/configuration/api.yaml
         test -f "$cfg" || { echo "Missing $cfg" >&2; exit 41; }
-        port="$SOCLAB_WAZUH_API_PORT"
+        port="$SOCLAB_WAZUH_API_INTERNAL_PORT"
         tmp="${cfg}.soclab.$$"
 
         # beta5 ships api.yaml mostly commented. Preserve vendor comments and
@@ -39,7 +40,7 @@ configure_wazuh_api_runtime() {
         grep -Eq "^[[:space:]]*port:[[:space:]]*${port}[[:space:]]*$" "$cfg"
         grep -Fq "host: [\"0.0.0.0\", \"::\"]" "$cfg"
       '); then
-    die "Could not configure Wazuh manager API listener on TCP/${WAZUH_API_PORT}."
+    die "Could not configure Wazuh manager API listener on internal TCP/${WAZUH_API_INTERNAL_PORT}."
   fi
 
   # Regression marker retained for the static port-contract test:
@@ -49,12 +50,12 @@ configure_wazuh_api_runtime() {
   local dashboard_cfg="$dashboard_cfg_dir/wazuh.yml"
   mkdir -p "$dashboard_cfg_dir"
 
-  log "Writing Wazuh dashboard plugin API configuration for TCP/${WAZUH_API_PORT}"
+  log "Writing Wazuh dashboard plugin API configuration for internal TCP/${WAZUH_API_INTERNAL_PORT}"
   cat >"$dashboard_cfg" <<EOF
 hosts:
   - default:
       url: https://wazuh.manager
-      port: ${WAZUH_API_PORT}
+      port: ${WAZUH_API_INTERNAL_PORT}
       username: wazuh-wui
       password: wazuh-wui
       run_as: true
@@ -63,8 +64,8 @@ EOF
   chmod 0640 "$dashboard_cfg"
   chown "${WAZUH_DASHBOARD_UID}:${WAZUH_DASHBOARD_GID}" "$dashboard_cfg"
 
-  grep -Eq "^[[:space:]]*port:[[:space:]]*${WAZUH_API_PORT}[[:space:]]*$" "$dashboard_cfg" || \
-    die "Dashboard wazuh.yml does not contain API TCP/${WAZUH_API_PORT}."
+  grep -Eq "^[[:space:]]*port:[[:space:]]*${WAZUH_API_INTERNAL_PORT}[[:space:]]*$" "$dashboard_cfg" || \
+    die "Dashboard wazuh.yml does not contain API internal TCP/${WAZUH_API_INTERNAL_PORT}."
   grep -Fq 'url: https://wazuh.manager' "$dashboard_cfg" || \
     die "Dashboard wazuh.yml does not target wazuh.manager."
 
@@ -110,18 +111,18 @@ PY
   (cd "$WAZUH_SINGLE" && docker compose config --quiet) || \
     die "Wazuh Compose became invalid after dashboard API configuration patch."
 
-  ok "Wazuh beta5 manager API configured in /var/wazuh-manager/api/configuration/api.yaml on TCP/${WAZUH_API_PORT}; dashboard URL is host-only and plugin port is ${WAZUH_API_PORT}"
+  ok "Wazuh beta5 manager API kept on internal TCP/${WAZUH_API_INTERNAL_PORT}; dashboard uses https://wazuh.manager:${WAZUH_API_INTERNAL_PORT}; host publishes https://localhost:${WAZUH_API_PORT}"
 }
 
 verify_wazuh_api_runtime_configuration() {
-  local manager_id dashboard_id manager_code dashboard_code dashboard_env mounted_cfg
+  local manager_id dashboard_id manager_code dashboard_code host_code dashboard_env mounted_cfg
   manager_id="$(compose_service_id wazuh.manager)"
   dashboard_id="$(compose_service_id wazuh.dashboard)"
   [[ -n "$manager_id" && -n "$dashboard_id" ]] || die "Cannot verify Wazuh API runtime configuration; manager/dashboard container missing."
 
   docker exec "$manager_id" sh -lc \
-    "grep -Eq '^[[:space:]]*port:[[:space:]]*${WAZUH_API_PORT}[[:space:]]*$' /var/wazuh-manager/api/configuration/api.yaml && grep -Fq 'host: [\"0.0.0.0\", \"::\"]' /var/wazuh-manager/api/configuration/api.yaml" || \
-    die "Running Wazuh beta5 manager API configuration is not set to host [0.0.0.0, ::] and TCP/${WAZUH_API_PORT}."
+    "grep -Eq '^[[:space:]]*port:[[:space:]]*${WAZUH_API_INTERNAL_PORT}[[:space:]]*$' /var/wazuh-manager/api/configuration/api.yaml && grep -Fq 'host: [\"0.0.0.0\", \"::\"]' /var/wazuh-manager/api/configuration/api.yaml" || \
+    die "Running Wazuh beta5 manager API configuration is not set to host [0.0.0.0, ::] and internal TCP/${WAZUH_API_INTERNAL_PORT}."
 
   dashboard_env="$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$dashboard_id" | grep '^WAZUH_API_URL=' || true)"
   [[ "$dashboard_env" == "WAZUH_API_URL=https://wazuh.manager" ]] || \
@@ -132,26 +133,28 @@ verify_wazuh_api_runtime_configuration() {
     die "Running Wazuh dashboard does not have the SOCLab wazuh.yml bind mount."
 
   docker exec "$dashboard_id" sh -lc \
-    "grep -Eq '^[[:space:]]*port:[[:space:]]*${WAZUH_API_PORT}[[:space:]]*$' /usr/share/wazuh-dashboard/data/wazuh/config/wazuh.yml && grep -Fq 'url: https://wazuh.manager' /usr/share/wazuh-dashboard/data/wazuh/config/wazuh.yml && ! grep -Eq '^[[:space:]]*port:[[:space:]]*55000[[:space:]]*$' /usr/share/wazuh-dashboard/data/wazuh/config/wazuh.yml" || \
-    die "Running Wazuh dashboard plugin configuration does not exclusively reference wazuh.manager API TCP/${WAZUH_API_PORT}."
+    "grep -Eq '^[[:space:]]*port:[[:space:]]*${WAZUH_API_INTERNAL_PORT}[[:space:]]*$' /usr/share/wazuh-dashboard/data/wazuh/config/wazuh.yml && grep -Fq 'url: https://wazuh.manager' /usr/share/wazuh-dashboard/data/wazuh/config/wazuh.yml" || \
+    die "Running Wazuh dashboard plugin configuration does not reference wazuh.manager API internal TCP/${WAZUH_API_INTERNAL_PORT}."
 
   manager_code="$(docker exec "$manager_id" sh -lc \
-    "curl -ksS -o /dev/null -w '%{http_code}' --max-time 10 https://localhost:${WAZUH_API_PORT}/ || true" 2>/dev/null || true)"
+    "curl -ksS -o /dev/null -w '%{http_code}' --max-time 10 https://localhost:${WAZUH_API_INTERNAL_PORT}/ || true" 2>/dev/null || true)"
   case "$manager_code" in
     200|401|403|404) ;;
-    *) die "Wazuh manager is not serving its API on internal TCP/${WAZUH_API_PORT} (HTTP ${manager_code:-none})." ;;
+    *) die "Wazuh manager is not serving its API on internal TCP/${WAZUH_API_INTERNAL_PORT} (HTTP ${manager_code:-none})." ;;
   esac
 
   dashboard_code="$(docker exec "$dashboard_id" sh -lc \
-    "curl -ksS -o /dev/null -w '%{http_code}' --max-time 10 https://wazuh.manager:${WAZUH_API_PORT}/ || true" 2>/dev/null || true)"
+    "curl -ksS -o /dev/null -w '%{http_code}' --max-time 10 https://wazuh.manager:${WAZUH_API_INTERNAL_PORT}/ || true" 2>/dev/null || true)"
   case "$dashboard_code" in
     200|401|403|404) ;;
-    *) die "Wazuh dashboard cannot reach manager API on TCP/${WAZUH_API_PORT} (HTTP ${dashboard_code:-none})." ;;
+    *) die "Wazuh dashboard cannot reach manager API on internal TCP/${WAZUH_API_INTERNAL_PORT} (HTTP ${dashboard_code:-none})." ;;
   esac
 
-  if docker logs --tail 300 "$dashboard_id" 2>&1 | grep -Eq 'wazuh\.manager:[0-9]+:55000|wazuh\.manager:55000'; then
-    die "Wazuh dashboard logs still show an invalid/default TCP/55000 manager API endpoint."
-  fi
+  host_code="$(curl -ksS -o /dev/null -w '%{http_code}' --max-time 10 "https://localhost:${WAZUH_API_PORT}/" || true)"
+  case "$host_code" in
+    200|401|403|404) ;;
+    *) die "Host cannot reach Wazuh API HTTPS remap on TCP/${WAZUH_API_PORT}->${WAZUH_API_INTERNAL_PORT} (HTTP ${host_code:-none})." ;;
+  esac
 
-  ok "Wazuh API endpoint contract verified: beta5 /var/wazuh-manager listener TCP/${WAZUH_API_PORT} + host-only dashboard URL + plugin TCP/${WAZUH_API_PORT}"
+  ok "Wazuh API endpoint contract verified: dashboard https://wazuh.manager:${WAZUH_API_INTERNAL_PORT}; host https://localhost:${WAZUH_API_PORT}->${WAZUH_API_INTERNAL_PORT}"
 }

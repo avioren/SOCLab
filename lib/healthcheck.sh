@@ -82,10 +82,10 @@ shuffle_runtime_health() {
     "$fail_fn" "shuffle-backend-db" "/api/v1/checkusers HTTP ${code:-none}"
   fi
 
-  if curl -fsS --max-time 10 "http://localhost:${SHUFFLE_FRONTEND_PORT}/" >/dev/null 2>&1; then
-    "$pass_fn" "shuffle-frontend" "HTTP reachable on http://localhost:${SHUFFLE_FRONTEND_PORT}"
-  elif curl -kfsS --max-time 10 "https://localhost:${SHUFFLE_HTTPS_PORT}/" >/dev/null 2>&1; then
+  if curl -kfsS --max-time 10 "https://localhost:${SHUFFLE_HTTPS_PORT}/" >/dev/null 2>&1; then
     "$pass_fn" "shuffle-frontend" "HTTPS reachable on https://localhost:${SHUFFLE_HTTPS_PORT}"
+  elif curl -fsS --max-time 10 "http://localhost:${SHUFFLE_FRONTEND_PORT}/" >/dev/null 2>&1; then
+    "$pass_fn" "shuffle-frontend" "HTTP compatibility endpoint reachable on port ${SHUFFLE_FRONTEND_PORT}"
   else
     "$fail_fn" "shuffle-frontend" "frontend not reachable on ${SHUFFLE_FRONTEND_PORT}/${SHUFFLE_HTTPS_PORT}"
   fi
@@ -93,9 +93,9 @@ shuffle_runtime_health() {
   os_pass="$(credential_value SHUFFLE_OPENSEARCH_PASSWORD || true)"
   if [[ -n "$os_pass" ]]; then
     if verify_shuffle_opensearch "$os_pass"; then
-      "$pass_fn" "shuffle-opensearch" "authenticated cluster health green/yellow"
+      "$pass_fn" "shuffle-opensearch" "authenticated HTTPS cluster health green/yellow"
     else
-      "$fail_fn" "shuffle-opensearch" "authenticated cluster health failed"
+      "$fail_fn" "shuffle-opensearch" "authenticated HTTPS cluster health failed"
     fi
   else
     "$skip_fn" "shuffle-opensearch" "credential inventory unavailable; direct auth test skipped"
@@ -147,10 +147,10 @@ shuffle_runtime_health() {
 
   if docker inspect shuffle-backend >/dev/null 2>&1; then
     if docker logs --since 10m shuffle-backend 2>&1 |
-       grep -Eqi 'No mapping found for \[updated_at\]|search_phase_execution_exception.*all shards failed'; then
+       grep -Eqi 'No mapping found for \[updated_at\]|No mapping found for \[priority\]|search_phase_execution_exception.*all shards failed|mapper .* cannot be changed'; then
       "$fail_fn" "shuffle-db-schema" "recent OpenSearch mapping/shard errors found in backend logs"
     else
-      "$pass_fn" "shuffle-db-schema" "no recent notification mapping/all-shards-failed errors"
+      "$pass_fn" "shuffle-db-schema" "no recent queue/mapping/all-shards-failed errors"
     fi
   fi
 }
@@ -168,7 +168,7 @@ final_health() {
     "https://localhost:${WAZUH_DASHBOARD_PORT}/login" || true)"
   case "$dash_code" in
     200|301|302|401|403) ok "Final Wazuh dashboard HTTPS check passed (HTTP $dash_code)" ;;
-    *) die "Final Wazuh dashboard HTTP check failed (HTTP ${dash_code:-none})." ;;
+    *) die "Final Wazuh dashboard HTTPS check failed (HTTP ${dash_code:-none})." ;;
   esac
 
   local failures=0
@@ -210,8 +210,10 @@ Execution net:   ${SHUFFLE_SWARM_NETWORK_NAME}
 
 Wazuh Dashboard: https://localhost:${WAZUH_DASHBOARD_PORT}
 Wazuh Indexer:   https://localhost:9200
-Wazuh API:       https://localhost:${WAZUH_API_PORT}
-Shuffle:         http://localhost:${SHUFFLE_FRONTEND_PORT}
+Wazuh API:       https://localhost:${WAZUH_API_PORT} -> https://wazuh.manager:${WAZUH_API_INTERNAL_PORT}
+Shuffle:         https://localhost:${SHUFFLE_HTTPS_PORT}
+Shuffle API:     http://localhost:${SHUFFLE_BACKEND_PORT}/api/v1 (local backend protocol)
+Shuffle Search:  https://localhost:${SHUFFLE_OPENSEARCH_PORT}
 
 Credentials:     ${STATE_DIR}/credentials.txt
 Installer log:   ${LOG}
@@ -280,7 +282,7 @@ healthcheck_all() {
   code="$(curl -ksS -o /tmp/soclab-hc-api.out -w '%{http_code}' --max-time 10 \
     "https://localhost:${WAZUH_API_PORT}/" || true)"
   if http_api_ok "$code"; then
-    hc_pass "wazuh-api" "HTTP $code on https://localhost:${WAZUH_API_PORT}"
+    hc_pass "wazuh-api" "HTTP $code on https://localhost:${WAZUH_API_PORT} -> ${WAZUH_API_INTERNAL_PORT}"
   else
     hc_fail "wazuh-api" "HTTP ${code:-none}"
   fi
@@ -315,7 +317,7 @@ healthcheck_all() {
 
   if [[ -f "$WAZUH_SINGLE/docker-compose.yml" ]]; then
     if verify_wazuh_api_runtime_configuration >/dev/null 2>&1; then
-      hc_pass "wazuh-api-config" "manager and dashboard both use TCP/${WAZUH_API_PORT}"
+      hc_pass "wazuh-api-config" "dashboard uses ${WAZUH_API_INTERNAL_PORT}; host remap uses ${WAZUH_API_PORT}"
     else
       hc_fail "wazuh-api-config" "manager/dashboard API configuration mismatch"
     fi
@@ -378,8 +380,9 @@ status_all() {
   echo "URLs:"
   echo "  Wazuh Dashboard: https://localhost:${WAZUH_DASHBOARD_PORT}"
   echo "  Wazuh Indexer:   https://localhost:9200"
-  echo "  Wazuh API:       https://localhost:${WAZUH_API_PORT}"
-  echo "  Shuffle:         http://localhost:${SHUFFLE_FRONTEND_PORT}"
+  echo "  Wazuh API:       https://localhost:${WAZUH_API_PORT} -> https://wazuh.manager:${WAZUH_API_INTERNAL_PORT}"
+  echo "  Shuffle:         https://localhost:${SHUFFLE_HTTPS_PORT}"
+  echo "  Shuffle Search:  https://localhost:${SHUFFLE_OPENSEARCH_PORT}"
   [[ -f "$STATE_DIR/credentials.txt" ]] && echo "  Credentials:     $STATE_DIR/credentials.txt"
 }
 

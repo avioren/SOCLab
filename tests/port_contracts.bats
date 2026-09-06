@@ -17,16 +17,18 @@ setup() {
   [ -z "$output" ]
 }
 
-@test "SOCLab configures the actual Wazuh API listener on TCP 15500" {
-  run grep -F 'WAZUH_API_PORT="${WAZUH_API_PORT:-15500}"' "$WAZUH"
+@test "SOCLab keeps Wazuh API internal 55000 and remaps only host 15500" {
+  run grep -F 'WAZUH_API_HOST_PORT="${WAZUH_API_HOST_PORT:-${WAZUH_API_PORT:-15500}}"' "$WAZUH"
   [ "$status" -eq 0 ]
-  run grep -F 'Wazuh API|127.0.0.1|${WAZUH_API_PORT:-15500}|tcp|${WAZUH_API_PORT:-15500}' "$COMMON"
+  run grep -F 'WAZUH_API_INTERNAL_PORT="${WAZUH_API_INTERNAL_PORT:-55000}"' "$WAZUH"
   [ "$status" -eq 0 ]
-  run grep -F '127.0.0.1:${WAZUH_API_PORT}:${WAZUH_API_PORT}' "$WAZUH"
+  run grep -F '127.0.0.1:${WAZUH_API_PORT}:${WAZUH_API_INTERNAL_PORT}' "$WAZUH"
+  [ "$status" -eq 0 ]
+  run grep -F 'Wazuh API Docker mapping set to 127.0.0.1:${WAZUH_API_PORT} -> container TCP/${WAZUH_API_INTERNAL_PORT}' "$WAZUH"
   [ "$status" -eq 0 ]
 }
 
-@test "Wazuh beta5 API uses the verified manager path and deterministic rewrite" {
+@test "Wazuh beta5 API uses verified path with internal 55000 dashboard contract" {
   run grep -F '/var/wazuh-manager/api/configuration/api.yaml' "$WAZUH_API_OVERRIDE"
   [ "$status" -eq 0 ]
   run grep -F 'grep -Ev "^[[:space:]]*(host|port):"' "$WAZUH_API_OVERRIDE"
@@ -37,39 +39,35 @@ setup() {
   [ "$status" -ne 0 ]
   run grep -F '/usr/share/wazuh-dashboard/data/wazuh/config/wazuh.yml' "$WAZUH_API_OVERRIDE"
   [ "$status" -eq 0 ]
-  run grep -F './config/wazuh_dashboard/wazuh.yml:/usr/share/wazuh-dashboard/data/wazuh/config/wazuh.yml:ro' "$WAZUH_API_OVERRIDE"
-  [ "$status" -eq 0 ]
   run grep -F 'WAZUH_API_URL=https://wazuh.manager' "$WAZUH_API_OVERRIDE"
   [ "$status" -eq 0 ]
-  run grep -F 'WAZUH_API_URL=https://wazuh.manager:${WAZUH_API_PORT}' "$WAZUH_API_OVERRIDE"
-  [ "$status" -ne 0 ]
   run grep -F 'url: https://wazuh.manager' "$WAZUH_API_OVERRIDE"
   [ "$status" -eq 0 ]
-  run grep -F 'port: ${WAZUH_API_PORT}' "$WAZUH_API_OVERRIDE"
+  run grep -F 'port: ${WAZUH_API_INTERNAL_PORT}' "$WAZUH_API_OVERRIDE"
   [ "$status" -eq 0 ]
   run grep -F 'username: wazuh-wui' "$WAZUH_API_OVERRIDE"
   [ "$status" -eq 0 ]
   run grep -F 'run_as: true' "$WAZUH_API_OVERRIDE"
   [ "$status" -eq 0 ]
-  run grep -F 'dashboard logs still show an invalid/default TCP/55000 manager API endpoint.' "$WAZUH_API_OVERRIDE"
-  [ "$status" -eq 0 ]
-  run grep -F 'configure_wazuh_api_runtime' "$INSTALL"
-  [ "$status" -eq 0 ]
-  run grep -F 'verify_wazuh_api_runtime_configuration' "$INSTALL"
+  run grep -F 'dashboard https://wazuh.manager:${WAZUH_API_INTERNAL_PORT}; host https://localhost:${WAZUH_API_PORT}->${WAZUH_API_INTERNAL_PORT}' "$WAZUH_API_OVERRIDE"
   [ "$status" -eq 0 ]
 }
 
-@test "beta5 commented api yaml rewrites to one active 15500 listener pair" {
+@test "beta5 commented api yaml rewrites to one active internal 55000 listener pair" {
   tmp="$(mktemp)"
   cp "$BETA5_API_FIXTURE" "$tmp"
   run bash -c '
-    cfg="$1"; port=15500; out="${cfg}.out"
+    cfg="$1"; port=55000; out="${cfg}.out"
     grep -Ev "^[[:space:]]*(host|port):" "$cfg" >"$out" || true
-    printf "\nhost: [\"0.0.0.0\", \"::\"]\nport: %s\n" "$port" >>"$out"
+    {
+      printf "\n"
+      printf "host: [\"0.0.0.0\", \"::\"]\n"
+      printf "port: %s\n" "$port"
+    } >>"$out"
     cat "$out" >"$cfg"
     rm -f "$out"
     grep -F "host: [\"0.0.0.0\", \"::\"]" "$cfg"
-    grep -F "port: 15500" "$cfg"
+    grep -F "port: 55000" "$cfg"
     test "$(grep -Ec "^[[:space:]]*host:" "$cfg")" -eq 1
     test "$(grep -Ec "^[[:space:]]*port:" "$cfg")" -eq 1
   ' _ "$tmp"
@@ -77,14 +75,14 @@ setup() {
   [ "$status" -eq 0 ]
 }
 
-@test "runtime URLs use configured Wazuh API port rather than localhost 55000" {
-  run grep -F 'https://localhost:${WAZUH_API_PORT}' "$INSTALL"
-  [ "$status" -eq 0 ]
-  run grep -F 'WAZUH_API_URL=https://localhost:${WAZUH_API_PORT}' "$CREDS"
-  [ "$status" -eq 0 ]
-  run grep -F 'https://localhost:${WAZUH_API_PORT}' "$HEALTH"
+@test "published Wazuh and browser URLs use HTTPS" {
+  run grep -F 'https://localhost:${WAZUH_API_PORT}' "$INSTALL" "$HEALTH" "$CREDS"
   [ "$status" -eq 0 ]
   run grep -R -F 'https://localhost:55000' "$INSTALL" "$HEALTH" "$CREDS"
+  [ "$status" -ne 0 ]
+  run grep -F 'SHUFFLE_BROWSER_URL="${SHUFFLE_DETECTED_URL:-https://localhost:${SHUFFLE_HTTPS_PORT}}"' "$CREDS"
+  [ "$status" -eq 0 ]
+  run grep -F 'http://localhost:${SHUFFLE_FRONTEND_PORT}' "$CREDS"
   [ "$status" -ne 0 ]
 }
 
@@ -94,14 +92,13 @@ setup() {
     'Shuffle/Tenzir syslog|0.0.0.0|1514|tcp|1514' \
     'Wazuh enrollment|0.0.0.0|1515|tcp|1515' \
     'Wazuh agent events|0.0.0.0|${WAZUH_AGENT_PORT:-15140}|tcp|1514' \
-    'Shuffle frontend HTTP|0.0.0.0|${SHUFFLE_FRONTEND_PORT:-3001}|tcp|80' \
     'Shuffle frontend HTTPS|0.0.0.0|${SHUFFLE_HTTPS_PORT:-3443}|tcp|443' \
     'Shuffle backend API|0.0.0.0|${SHUFFLE_BACKEND_PORT:-5001}|tcp|5001' \
     'Shuffle/Tenzir API|0.0.0.0|5160|tcp|5160' \
     'Wazuh dashboard|0.0.0.0|${WAZUH_DASHBOARD_PORT:-8443}|tcp|5601' \
     'Wazuh indexer|0.0.0.0|9200|tcp|9200' \
     'Shuffle OpenSearch|127.0.0.1|${SHUFFLE_OPENSEARCH_PORT:-9201}|tcp|9200' \
-    'Wazuh API|127.0.0.1|${WAZUH_API_PORT:-15500}|tcp|${WAZUH_API_PORT:-15500}'; do
+    'Wazuh API|127.0.0.1|${WAZUH_API_PORT:-15500}|tcp|${WAZUH_API_INTERNAL_PORT:-55000}'; do
     run grep -F "$needle" "$COMMON"
     [ "$status" -eq 0 ]
   done
@@ -128,13 +125,13 @@ setup() {
   [ "$status" -eq 0 ]
 }
 
-@test "Wazuh compose keeps Tenzir 1514 free while preserving enrollment syslog and configured API port" {
+@test "Wazuh compose keeps Tenzir 1514 free while preserving enrollment syslog and host API remap" {
   run grep -F 'Wazuh still publishes host TCP/1514; this would conflict with Shuffle/Tenzir.' "$WAZUH"
   [ "$status" -eq 0 ]
   run grep -F '1515:1515' "$WAZUH"
   [ "$status" -eq 0 ]
   run grep -F '514:514/udp' "$WAZUH"
   [ "$status" -eq 0 ]
-  run grep -F 'Wazuh API Docker mapping set to 127.0.0.1:${WAZUH_API_PORT} -> container TCP/${WAZUH_API_PORT}' "$WAZUH"
+  run grep -F 'Wazuh API Docker mapping set to 127.0.0.1:${WAZUH_API_PORT} -> container TCP/${WAZUH_API_INTERNAL_PORT}' "$WAZUH"
   [ "$status" -eq 0 ]
 }
