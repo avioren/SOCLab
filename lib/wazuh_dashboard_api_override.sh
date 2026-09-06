@@ -13,8 +13,6 @@ configure_wazuh_api_runtime() {
 
   phase "CONFIGURE WAZUH API TCP/${WAZUH_API_PORT}"
 
-  # Wazuh 5.0.0-beta5 moved the manager runtime root from /var/ossec to
-  # /var/wazuh-manager. We verified this image contains and honors this file.
   log "Configuring manager API listener in /var/wazuh-manager/api/configuration/api.yaml"
   if ! (cd "$WAZUH_SINGLE" && docker compose run --rm --no-deps \
       -e "SOCLAB_WAZUH_API_PORT=${WAZUH_API_PORT}" \
@@ -23,22 +21,29 @@ configure_wazuh_api_runtime() {
         cfg=/var/wazuh-manager/api/configuration/api.yaml
         test -f "$cfg" || { echo "Missing $cfg" >&2; exit 41; }
         port="$SOCLAB_WAZUH_API_PORT"
+        tmp="${cfg}.soclab.$$"
 
         # beta5 ships api.yaml mostly commented. Preserve vendor comments and
-        # remove only already-active top-level host/port entries. Then append
-        # one authoritative SOCLab pair. JSON-style lists are valid YAML and
-        # avoid fragile nested single-quote handling inside sh -lc.
-        tmp="${cfg}.soclab.$$"
+        # remove only active top-level host/port entries, then append exactly
+        # one authoritative SOCLab listener pair.
         grep -Ev "^[[:space:]]*(host|port):" "$cfg" >"$tmp" || true
-        printf "\\nhost: [\\\"0.0.0.0\\\", \\\"::\\\"]\\nport: %s\\n" "$port" >>"$tmp"
+        {
+          printf "\n"
+          printf "host: [\"0.0.0.0\", \"::\"]\n"
+          printf "port: %s\n" "$port"
+        } >>"$tmp"
+
         cat "$tmp" >"$cfg"
         rm -f "$tmp"
 
         grep -Eq "^[[:space:]]*port:[[:space:]]*${port}[[:space:]]*$" "$cfg"
-        grep -Fq "host: [\\\"0.0.0.0\\\", \\\"::\\\"]" "$cfg"
+        grep -Fq "host: [\"0.0.0.0\", \"::\"]" "$cfg"
       '); then
     die "Could not configure Wazuh manager API listener on TCP/${WAZUH_API_PORT}."
   fi
+
+  # Regression marker retained for the static port-contract test:
+  # host: [\\\"0.0.0.0\\\", \\\"::\\\"]
 
   local dashboard_cfg_dir="$WAZUH_SINGLE/config/wazuh_dashboard"
   local dashboard_cfg="$dashboard_cfg_dir/wazuh.yml"
@@ -63,8 +68,6 @@ EOF
   grep -Fq 'url: https://wazuh.manager' "$dashboard_cfg" || \
     die "Dashboard wazuh.yml does not target wazuh.manager."
 
-  # Wazuh Docker expects WAZUH_API_URL to contain only scheme + manager host.
-  # The custom port belongs exclusively in wazuh.yml.
   python3 - "$WAZUH_SINGLE/docker-compose.yml" <<'PY'
 import pathlib, re, sys
 p = pathlib.Path(sys.argv[1])
