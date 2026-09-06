@@ -50,13 +50,108 @@ have() { command -v "$1" >/dev/null 2>&1; }
 phase() { echo; log "============================================================"; log "$*"; log "============================================================"; }
 
 quiesce_shuffle_for_cleanup() {
-  # Orborus can recreate worker/app services while cleanup is in progress.
-  # Stop it first, but leave actual Compose container removal to clean_lab so
-  # all standalone endpoints are gone before the external overlay is removed.
   if docker inspect shuffle-orborus >/dev/null 2>&1; then
-    log "Quiescing Shuffle Orborus before Compose/Swarm teardown"
+    log "Quiescing Shuffle Orborus before teardown"
     docker stop shuffle-orborus >/dev/null 2>&1 || true
   fi
+}
+
+remove_shuffle_swarm_services_before_compose() {
+  local state exec_id core_id sid sname target cid cname svc_label deadline
+  local -a remove_ids=()
+  state="$(docker info --format '{{.Swarm.LocalNodeState}}' 2>/dev/null || echo inactive)"
+  [[ "$state" == "active" ]] || return 0
+  docker node ls >/dev/null 2>&1 || return 0
+
+  exec_id="$(docker network inspect -f '{{.Id}}' "$SHUFFLE_SWARM_NETWORK_NAME" 2>/dev/null || true)"
+  core_id="$(docker network inspect -f '{{.Id}}' shuffle_shuffle 2>/dev/null || true)"
+
+  while read -r sid; do
+    [[ -n "$sid" ]] || continue
+    sname="$(docker service inspect -f '{{.Spec.Name}}' "$sid" 2>/dev/null || true)"
+    if [[ "$sname" == "shuffle-workers" ]]; then
+      remove_ids+=("$sid")
+      continue
+    fi
+    while read -r target; do
+      [[ -n "$target" ]] || continue
+      if [[ ( -n "$exec_id" && "$target" == "$exec_id" ) || ( -n "$core_id" && "$target" == "$core_id" ) ]]; then
+        remove_ids+=("$sid")
+        break
+      fi
+    done < <(docker service inspect -f '{{range .Spec.TaskTemplate.Networks}}{{println .Target}}{{end}}' "$sid" 2>/dev/null || true)
+  done < <(docker service ls -q 2>/dev/null || true)
+
+  if (( ${#remove_ids[@]} )); then
+    for sid in "${remove_ids[@]}"; do
+      sname="$(docker service inspect -f '{{.Spec.Name}}' "$sid" 2>/dev/null || echo "$sid")"
+      log "Removing SOCLab Swarm service $sname"
+      docker service rm "$sid" >/dev/null 2>&1 || true
+    done
+  fi
+
+  # Give Swarm time to remove task endpoints before Compose tries to delete
+  # shuffle_shuffle. This avoids the cross-management cleanup deadlock.
+  deadline=$((SECONDS + 90))
+  while (( SECONDS < deadline )); do
+    local pending=0
+    for net in shuffle_shuffle "$SHUFFLE_SWARM_NETWORK_NAME"; do
+      docker network inspect "$net" >/dev/null 2>&1 || continue
+      while read -r cid; do
+        [[ -n "$cid" ]] || continue
+        svc_label="$(docker inspect -f '{{index .Config.Labels "com.docker.swarm.service.name"}}' "$cid" 2>/dev/null || true)"
+        if [[ -n "$svc_label" && "$svc_label" != "<no value>" ]]; then
+          pending=1
+          break
+        fi
+      done < <(docker ps -aq --filter "network=$net" 2>/dev/null || true)
+      (( pending == 0 )) || break
+    done
+    (( pending == 0 )) && break
+    sleep 2
+  done
+
+  # Remove non-core standalone runtime containers (for example Tenzir) that
+  # can otherwise keep either SOCLab overlay busy. Core Compose containers are
+  # intentionally left for clean_lab() to remove normally.
+  for net in shuffle_shuffle "$SHUFFLE_SWARM_NETWORK_NAME"; do
+    docker network inspect "$net" >/dev/null 2>&1 || continue
+    while read -r cid; do
+      [[ -n "$cid" ]] || continue
+      cname="$(docker inspect -f '{{.Name}}' "$cid" 2>/dev/null | sed 's#^/##' || true)"
+      case "$cname" in
+        shuffle-frontend|shuffle-backend|shuffle-orborus|shuffle-opensearch) ;;
+        *)
+          log "Removing stale SOCLab runtime container ${cname:-$cid}"
+          docker rm -f -v "$cid" >/dev/null 2>&1 || true
+          ;;
+      esac
+    done < <(docker ps -aq --filter "network=$net" 2>/dev/null || true)
+  done
+}
+
+remove_shuffle_execution_overlay_after_compose() {
+  local deadline cid cname
+  docker network inspect "$SHUFFLE_SWARM_NETWORK_NAME" >/dev/null 2>&1 || return 0
+
+  deadline=$((SECONDS + 90))
+  while (( SECONDS < deadline )); do
+    # At this point Compose and Swarm services are already gone. Anything still
+    # attached to this dedicated SOCLab network is stale lab runtime state.
+    while read -r cid; do
+      [[ -n "$cid" ]] || continue
+      cname="$(docker inspect -f '{{.Name}}' "$cid" 2>/dev/null | sed 's#^/##' || true)"
+      log "Removing residual execution-network container ${cname:-$cid}"
+      docker rm -f -v "$cid" >/dev/null 2>&1 || true
+    done < <(docker ps -aq --filter "network=$SHUFFLE_SWARM_NETWORK_NAME" 2>/dev/null || true)
+
+    docker network rm "$SHUFFLE_SWARM_NETWORK_NAME" >/dev/null 2>&1 && return 0
+    sleep 2
+  done
+
+  warn "Residual endpoints on $SHUFFLE_SWARM_NETWORK_NAME:"
+  docker network inspect -f '{{json .Containers}}' "$SHUFFLE_SWARM_NETWORK_NAME" 2>/dev/null || true
+  die "Could not remove SOCLab execution overlay '$SHUFFLE_SWARM_NETWORK_NAME'."
 }
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -73,16 +168,14 @@ source "$SCRIPT_DIR/lib/shuffle.sh"
 # shellcheck source=lib/healthcheck.sh
 source "$SCRIPT_DIR/lib/healthcheck.sh"
 
-# Override the library reset entrypoint so install and reset share exactly the
-# same dependency-safe teardown order. The upstream Shuffle tree is never
-# edited; this only orchestrates SOCLab-owned resources.
 reset_cmd() {
   need_root
   check_docker
   phase "RESET SOC LAB"
   quiesce_shuffle_for_cleanup
+  remove_shuffle_swarm_services_before_compose
   clean_lab
-  cleanup_shuffle_swarm_runtime
+  remove_shuffle_execution_overlay_after_compose
   ok "SOCLab reset complete; Docker Swarm mode itself was intentionally left unchanged"
 }
 
@@ -94,15 +187,17 @@ install_all() {
   log "Shuffle execution architecture: one Docker Swarm manager+worker node with attachable overlay networks."
   log "This will erase ONLY the previous /opt/soclab, /opt/soar-lab, and SOCLab-owned Docker/Swarm runtime resources."
 
-  # Validate external release artifacts before destroying the working lab.
   preflight_shuffle_release
 
-  # Teardown order matters: backend and Orborus are standalone Compose
-  # containers attached to shuffle_swarm_executions. Docker will not remove
-  # that overlay until those endpoints are gone.
+  # Dependency-safe teardown:
+  # 1) stop Orborus so it cannot recreate services,
+  # 2) remove Swarm services/runtime endpoints,
+  # 3) remove Compose containers and their core network,
+  # 4) remove the dedicated execution overlay.
   quiesce_shuffle_for_cleanup
+  remove_shuffle_swarm_services_before_compose
   clean_lab
-  cleanup_shuffle_swarm_runtime
+  remove_shuffle_execution_overlay_after_compose
 
   phase "HOST PREPARATION"
   install_prereqs
