@@ -1,11 +1,24 @@
 #!/usr/bin/env bash
 # SOC Lab installer / operations entrypoint
-# Known-working Wazuh 5.0.0-beta5 v3 baseline + Shuffle on WSL2 / Docker Desktop
+# Wazuh 5.0.0-beta5 + Shuffle 2.2.1 on WSL2 / Docker Desktop
+# Shuffle execution plane: explicit single-node Docker Swarm
 set -Eeuo pipefail
 umask 077
 
 WAZUH_VERSION="5.0.0-beta5"
 WAZUH_REF="v${WAZUH_VERSION}"
+
+SHUFFLE_VERSION="${SHUFFLE_VERSION:-2.2.1}"
+SHUFFLE_REF="${SHUFFLE_REF:-v${SHUFFLE_VERSION}}"
+SHUFFLE_FRONTEND_IMAGE="${SHUFFLE_FRONTEND_IMAGE:-ghcr.io/shuffle/shuffle-frontend:${SHUFFLE_VERSION}}"
+SHUFFLE_BACKEND_IMAGE="${SHUFFLE_BACKEND_IMAGE:-ghcr.io/shuffle/shuffle-backend:${SHUFFLE_VERSION}}"
+SHUFFLE_ORBORUS_IMAGE="${SHUFFLE_ORBORUS_IMAGE:-ghcr.io/shuffle/shuffle-orborus:${SHUFFLE_VERSION}}"
+SHUFFLE_WORKER_IMAGE="${SHUFFLE_WORKER_IMAGE:-ghcr.io/shuffle/shuffle-worker:${SHUFFLE_VERSION}}"
+SHUFFLE_OPENSEARCH_IMAGE="${SHUFFLE_OPENSEARCH_IMAGE:-opensearchproject/opensearch:3.2.0}"
+SHUFFLE_SWARM_NETWORK_NAME="${SHUFFLE_SWARM_NETWORK_NAME:-shuffle_swarm_executions}"
+SHUFFLE_SWARM_MTU="${SHUFFLE_SWARM_MTU:-}"
+SOCLAB_SWARM_ADVERTISE_ADDR="${SOCLAB_SWARM_ADVERTISE_ADDR:-}"
+
 ROOT_DIR="${SOCLAB_ROOT:-/opt/soclab}"
 WAZUH_DIR="$ROOT_DIR/wazuh-docker"
 WAZUH_SINGLE="$WAZUH_DIR/single-node"
@@ -54,9 +67,12 @@ install_all() {
   need_root
   check_docker
 
-  phase "SOC LAB CLEAN INSTALL - WAZUH ${WAZUH_VERSION} + SHUFFLE"
-  log "Known-working v3 runtime path: no Wazuh password prompts, discovery, rotation, or injection."
-  log "This will erase ONLY the previous /opt/soclab, /opt/soar-lab, and their lab-owned Docker Compose state."
+  phase "SOC LAB CLEAN INSTALL - WAZUH ${WAZUH_VERSION} + SHUFFLE ${SHUFFLE_VERSION} (SINGLE-NODE SWARM)"
+  log "Shuffle execution architecture: one Docker Swarm manager+worker node with attachable overlay networks."
+  log "This will erase ONLY the previous /opt/soclab, /opt/soar-lab, and SOCLab-owned Docker/Swarm runtime resources."
+
+  # Validate external release artifacts before destroying the working lab.
+  preflight_shuffle_release
 
   clean_lab
 
@@ -84,7 +100,7 @@ install_all() {
   patch_wazuh_dashboard_port
 
   log "Validating Wazuh Compose configuration"
-  (cd "$WAZUH_SINGLE" && docker compose config >/tmp/soclab-wazuh-beta5-compose.yml)
+  (cd "$WAZUH_SINGLE" && docker compose config --quiet)
 
   log "Pulling/verifying Wazuh ${WAZUH_VERSION} images"
   (cd "$WAZUH_SINGLE" && docker compose pull)
@@ -174,22 +190,26 @@ usage() {
 Usage: sudo ./install.sh <command>
 
 Commands:
-  install       Full clean install using the known-working v3 Wazuh beta5 runtime path
+  install       Full clean install: Wazuh ${WAZUH_VERSION} + Shuffle ${SHUFFLE_VERSION} single-node Swarm
   healthcheck   Run reusable end-to-end healthcheck
   verify        Run the full local integration verification (alias of healthcheck)
-  status        Show Docker Compose status and lab URLs
+  status        Show Compose, Swarm, network, and lab endpoint status
   logs [target] Show last 300 log lines; target: wazuh|shuffle|all
-  reset         Remove only SOC-lab-owned state
+  reset         Remove only SOCLab-owned state, services and networks; leaves Swarm mode itself intact
   credentials   Show local mode-600 credential inventory path; does not print secrets
   help          Show this help
 
 Environment overrides:
-  SOCLAB_ROOT                 default: /opt/soclab
-  WAZUH_DASHBOARD_PORT        default: 8443
-  SHUFFLE_FRONTEND_PORT       default: 3001
-  SHUFFLE_HTTPS_PORT          default: 3443
-  SHUFFLE_BACKEND_PORT        default: 5001
-  SHUFFLE_OPENSEARCH_PORT     default: 9201
+  SOCLAB_ROOT                    default: /opt/soclab
+  WAZUH_DASHBOARD_PORT           default: 8443
+  SHUFFLE_VERSION                default: 2.2.1
+  SHUFFLE_FRONTEND_PORT          default: 3001
+  SHUFFLE_HTTPS_PORT             default: 3443
+  SHUFFLE_BACKEND_PORT           default: 5001
+  SHUFFLE_OPENSEARCH_PORT        default: 9201
+  SHUFFLE_SWARM_NETWORK_NAME     default: shuffle_swarm_executions
+  SHUFFLE_SWARM_MTU              optional; set only when Docker/host MTU requires an override
+  SOCLAB_SWARM_ADVERTISE_ADDR    optional; required only if docker swarm init cannot choose an address
 EOF
 }
 
