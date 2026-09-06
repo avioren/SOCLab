@@ -8,17 +8,17 @@ setup() {
 }
 
 @test "port contract is sourced through install runtime and has no duplicate host protocol tuples" {
-  run bash -c 'source "$1"; { soclab_application_port_contract; soclab_swarm_port_contract; } | awk -F"|" "{print \\$4 \":\" \\$3}" | sort | uniq -d' _ "$INSTALL"
+  run bash -c 'source "$1"; { soclab_application_port_contract; soclab_swarm_port_contract; } | cut -d"|" -f3,4 | sort | uniq -d' _ "$INSTALL"
   [ "$status" -eq 0 ]
   [ -z "$output" ]
 }
 
-@test "Wazuh API stays on host TCP 55000 and is never remapped to 15500" {
+@test "Wazuh API stays on host TCP 55000 with no obsolete recovery port" {
   run grep -F 'Wazuh API|127.0.0.1|55000|tcp|55000' "$COMMON"
   [ "$status" -eq 0 ]
   run grep -F '127.0.0.1:55000:55000' "$WAZUH"
   [ "$status" -eq 0 ]
-  run grep -R -F '15500' "$REPO_ROOT" --exclude-dir=.git
+  run grep -R -E '1[5]500' "$REPO_ROOT" --exclude-dir=.git
   [ "$status" -ne 0 ]
 }
 
