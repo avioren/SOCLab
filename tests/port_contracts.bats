@@ -25,13 +25,23 @@ setup() {
   [ "$status" -eq 0 ]
 }
 
-@test "Wazuh API port is configured in manager api.yaml and dashboard plugin wazuh.yml" {
+@test "Wazuh API port is configured in manager api.yaml and generated dashboard plugin wazuh.yml" {
   run grep -F '/var/wazuh-manager/api/configuration/api.yaml' "$WAZUH_API_OVERRIDE"
   [ "$status" -eq 0 ]
   run grep -F '/usr/share/wazuh-dashboard/data/wazuh/config/wazuh.yml' "$WAZUH_API_OVERRIDE"
   [ "$status" -eq 0 ]
   run grep -F './config/wazuh_dashboard/wazuh.yml:/usr/share/wazuh-dashboard/data/wazuh/config/wazuh.yml:ro' "$WAZUH_API_OVERRIDE"
   [ "$status" -eq 0 ]
+  run grep -F 'Generating Wazuh dashboard plugin wazuh.yml' "$WAZUH_API_OVERRIDE"
+  [ "$status" -eq 0 ]
+  run grep -F 'url: https://wazuh.manager' "$WAZUH_API_OVERRIDE"
+  [ "$status" -eq 0 ]
+  run grep -F 'username: wazuh-wui' "$WAZUH_API_OVERRIDE"
+  [ "$status" -eq 0 ]
+  run grep -F 'run_as: true' "$WAZUH_API_OVERRIDE"
+  [ "$status" -eq 0 ]
+  run grep -F 'Pinned Wazuh dashboard plugin configuration is missing' "$WAZUH_API_OVERRIDE"
+  [ "$status" -ne 0 ]
   run grep -F 'source "$SCRIPT_DIR/lib/wazuh_dashboard_api_override.sh"' "$REPO_ROOT/lib/wazuh_v3_certs.sh"
   [ "$status" -eq 0 ]
   run grep -F 'configure_wazuh_api_runtime' "$INSTALL"
