@@ -1,4 +1,4 @@
-version: 1
+version: 2
 provider: eraser
 source_of_truth: gitlab
 workspace:
@@ -13,7 +13,11 @@ diagrams:
     scope:
       - Windows 11 / WSL2 / Docker Desktop boundaries
       - Wazuh 5.0.0-beta5 manager, indexer and dashboard
-      - Shuffle and its separate OpenSearch backend
+      - Shuffle 2.2.1 control/data plane
+      - single-node Docker Swarm manager and worker execution plane
+      - attachable core and shuffle_swarm_executions overlay networks
+      - Orborus to shuffle-workers to temporary app-service dependency chain
+      - separate local Shuffle OpenSearch backend and image-derived database ownership
       - Wazuh-to-Shuffle integration boundary
       - runtime clones under /opt/soclab
       - local-only credential state
@@ -21,11 +25,14 @@ diagrams:
   - id: APJupz-HUPJEYlJabdDZ
     name: SOCLab Installation and Verification Flow
     scope:
+      - preflight pinned Shuffle source and image artifacts before destructive cleanup
       - installer phase ordering
       - Wazuh dependency startup order
       - TLS certificate generation and mount preflight
-      - health gates and failure diagnostics
-      - Shuffle installation
+      - Docker Swarm initialization and single-node-manager validation
+      - execution overlay creation and validation
+      - Shuffle OpenSearch UID/GID discovery and data ownership
+      - Backend/OpenSearch, Orborus, worker and overlay health gates
       - reusable verification commands and Bats contracts
     url: https://app.eraser.io/workspace/is00JQNKMBOR7VE81O2t?diagram=APJupz-HUPJEYlJabdDZ&layout=canvas
 
@@ -37,3 +44,4 @@ sync:
   mode: reviewed-export
   automatic_two_way_gitlab_sync: false
   future_api_automation: optional
+  note: GitLab is authoritative for the Swarm runtime contract; reconcile the Eraser canvas from this manifest when editor automation is available.

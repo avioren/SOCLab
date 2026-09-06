@@ -3,12 +3,17 @@
 setup() {
   REPO_ROOT="$(cd "$BATS_TEST_DIRNAME/.." && pwd)"
   INSTALL="$REPO_ROOT/install.sh"
+  COMMON="$REPO_ROOT/lib/common.sh"
+  SHUFFLE="$REPO_ROOT/lib/shuffle.sh"
+  HEALTH="$REPO_ROOT/lib/healthcheck.sh"
   WAZUH="$REPO_ROOT/lib/wazuh.sh"
   V3_CERTS="$REPO_ROOT/lib/wazuh_v3_certs.sh"
 }
 
 @test "installer is valid bash" {
   run bash -n "$INSTALL"
+  [ "$status" -eq 0 ]
+  run bash -n "$COMMON" "$SHUFFLE" "$HEALTH"
   [ "$status" -eq 0 ]
 }
 
@@ -31,8 +36,26 @@ setup() {
   [ "$status" -eq 0 ]
 }
 
+@test "installer pins stable Shuffle release and all execution images" {
+  run grep -F 'SHUFFLE_VERSION="${SHUFFLE_VERSION:-2.2.1}"' "$INSTALL"
+  [ "$status" -eq 0 ]
+  run grep -F 'shuffle-frontend:${SHUFFLE_VERSION}' "$INSTALL"
+  [ "$status" -eq 0 ]
+  run grep -F 'shuffle-backend:${SHUFFLE_VERSION}' "$INSTALL"
+  [ "$status" -eq 0 ]
+  run grep -F 'shuffle-orborus:${SHUFFLE_VERSION}' "$INSTALL"
+  [ "$status" -eq 0 ]
+  run grep -F 'shuffle-worker:${SHUFFLE_VERSION}' "$INSTALL"
+  [ "$status" -eq 0 ]
+}
+
 @test "installer does not contain executable global Docker prune commands" {
   run grep -RE '^[[:space:]]*docker[[:space:]]+(system|volume|image)[[:space:]]+prune' "$INSTALL" "$REPO_ROOT/lib"
+  [ "$status" -ne 0 ]
+}
+
+@test "cleanup never leaves the global swarm by force" {
+  run grep -RE '^[[:space:]]*docker[[:space:]]+swarm[[:space:]]+leave' "$INSTALL" "$REPO_ROOT/lib"
   [ "$status" -ne 0 ]
 }
 
@@ -87,4 +110,69 @@ setup() {
   http_api_ok 404
   ! http_indexer_ok 500
   ! http_api_ok 500
+}
+
+@test "Shuffle Swarm prerequisites initialize a manager and execution overlay" {
+  run grep -F 'docker swarm init' "$SHUFFLE"
+  [ "$status" -eq 0 ]
+  run grep -F -- '--driver overlay' "$SHUFFLE"
+  [ "$status" -eq 0 ]
+  run grep -F -- '--attachable' "$SHUFFLE"
+  [ "$status" -eq 0 ]
+  run grep -F 'SHUFFLE_SWARM_NETWORK_NAME' "$SHUFFLE"
+  [ "$status" -eq 0 ]
+}
+
+@test "host prerequisites enable IPv4 forwarding for Swarm networking" {
+  run grep -F 'net.ipv4.ip_forward=1' "$SHUFFLE"
+  [ "$status" -eq 0 ]
+  run grep -F 'sysctl -w net.ipv4.ip_forward=1' "$SHUFFLE"
+  [ "$status" -eq 0 ]
+}
+
+@test "Shuffle OpenSearch data ownership is discovered from the pinned image" {
+  run grep -F 'detect_shuffle_opensearch_image_account' "$SHUFFLE"
+  [ "$status" -eq 0 ]
+  run grep -F 'id -u opensearch' "$SHUFFLE"
+  [ "$status" -eq 0 ]
+  run grep -F 'chown -R "${SHUFFLE_OPENSEARCH_UID}:${SHUFFLE_OPENSEARCH_GID}"' "$SHUFFLE"
+  [ "$status" -eq 0 ]
+}
+
+@test "Shuffle OpenSearch password generator guarantees required character classes" {
+  run grep -F 'secrets.choice("ABCDEFGHJKLMNPQRSTUVWXYZ")' "$SHUFFLE"
+  [ "$status" -eq 0 ]
+  run grep -F 'secrets.choice("abcdefghijkmnopqrstuvwxyz")' "$SHUFFLE"
+  [ "$status" -eq 0 ]
+  run grep -F 'secrets.choice("23456789")' "$SHUFFLE"
+  [ "$status" -eq 0 ]
+  run grep -F 'secrets.choice("!@%_-")' "$SHUFFLE"
+  [ "$status" -eq 0 ]
+}
+
+@test "Shuffle Compose validation does not render secrets into a temp file" {
+  run grep -F 'docker compose config --quiet' "$SHUFFLE"
+  [ "$status" -eq 0 ]
+  run grep -E 'docker compose config[[:space:]]*>' "$SHUFFLE"
+  [ "$status" -ne 0 ]
+}
+
+@test "Shuffle healthcheck validates the execution plane, not only the frontend" {
+  run grep -F 'shuffle-workers' "$HEALTH"
+  [ "$status" -eq 0 ]
+  run grep -F 'shuffle_swarm_executions' "$HEALTH"
+  [ "$status" -eq 0 ]
+  run grep -F '/api/v1/checkusers' "$HEALTH"
+  [ "$status" -eq 0 ]
+  run grep -F '/var/run/docker.sock' "$HEALTH"
+  [ "$status" -eq 0 ]
+}
+
+@test "cleanup removes lab-owned worker services and overlay without destroying Swarm" {
+  run grep -F 'cleanup_shuffle_swarm_runtime' "$SHUFFLE"
+  [ "$status" -eq 0 ]
+  run grep -F 'docker service rm shuffle-workers' "$SHUFFLE"
+  [ "$status" -eq 0 ]
+  run grep -F 'docker network rm "$SHUFFLE_SWARM_NETWORK_NAME"' "$SHUFFLE"
+  [ "$status" -eq 0 ]
 }
