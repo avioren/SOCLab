@@ -141,6 +141,37 @@ remove_all_single_node_swarm_services() {
   fi
 }
 
+remove_tenzir_runtime() {
+  local deadline cid cname
+
+  # Tenzir is created by Shuffle/Orborus as a standalone container on its own
+  # bridge network, so Swarm-service cleanup and Shuffle overlay cleanup do not
+  # necessarily see it. Remove it explicitly after Orborus has been stopped.
+  if docker inspect tenzir-node >/dev/null 2>&1; then
+    log "Removing SOCLab Tenzir runtime container tenzir-node"
+    docker rm -f -v tenzir-node >/dev/null 2>&1 || die "Could not remove Tenzir runtime container 'tenzir-node'."
+  fi
+
+  if docker network inspect tenzir-network >/dev/null 2>&1; then
+    while read -r cid; do
+      [[ -n "$cid" ]] || continue
+      cname="$(docker inspect -f '{{.Name}}' "$cid" 2>/dev/null | sed 's#^/##' || true)"
+      log "Removing residual container ${cname:-$cid} from SOCLab Tenzir network"
+      docker rm -f -v "$cid" >/dev/null 2>&1 || true
+    done < <(docker ps -aq --filter 'network=tenzir-network' 2>/dev/null || true)
+
+    deadline=$((SECONDS + 30))
+    while (( SECONDS < deadline )); do
+      docker network inspect tenzir-network >/dev/null 2>&1 || break
+      docker network rm tenzir-network >/dev/null 2>&1 || true
+      sleep 1
+    done
+    docker network inspect tenzir-network >/dev/null 2>&1 && die "Could not remove SOCLab Tenzir network 'tenzir-network'."
+  fi
+
+  docker inspect tenzir-node >/dev/null 2>&1 && die "Residual Tenzir runtime container remains after cleanup."
+}
+
 leave_dedicated_single_node_swarm() {
   local deadline state net
   validate_dedicated_single_node_swarm || return 0
@@ -178,6 +209,11 @@ clean_lab() {
   # shuffle-tools/app workers while Compose and overlays are being removed.
   remove_all_single_node_swarm_services
 
+  # Tenzir is not a Swarm service; Orborus creates it as a standalone runtime
+  # container on tenzir-network. Remove both explicitly before Compose/Swarm
+  # teardown so it cannot survive a failed installation.
+  remove_tenzir_runtime
+
   if [[ -f "$WAZUH_SINGLE/docker-compose.yml" ]]; then
     log "Stopping existing Wazuh Compose project"
     (cd "$WAZUH_SINGLE" && docker compose down -v --remove-orphans --timeout 20) || true
@@ -201,6 +237,8 @@ clean_lab() {
   mkdir -p "$ROOT_DIR" "$STATE_DIR"
   if docker ps -aq --filter 'label=com.docker.compose.project=single-node' | grep -q .; then die "Residual 'single-node' Compose containers remain after cleanup."; fi
   if docker ps -aq --filter 'label=com.docker.compose.project=shuffle' | grep -q .; then die "Residual 'shuffle' Compose containers remain after cleanup."; fi
+  if docker inspect tenzir-node >/dev/null 2>&1; then die "Residual Tenzir container remains after cleanup."; fi
+  if docker network inspect tenzir-network >/dev/null 2>&1; then die "Residual Tenzir network remains after cleanup."; fi
   if docker service ls -q >/dev/null 2>&1; then
     # docker service ls should no longer be available because Swarm was reset.
     docker service ls -q 2>/dev/null | grep -q . && die "Residual Swarm services remain after cleanup."
