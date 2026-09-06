@@ -195,14 +195,23 @@ setup() {
   [[ "$output" == *'2>/dev/null'* ]]
 }
 
-@test "install teardown removes Compose endpoints before execution overlay" {
+@test "install teardown removes Swarm services before Compose and overlay cleanup" {
   run awk '/^install_all\(\)/,/^}/ {print}' "$INSTALL"
   [ "$status" -eq 0 ]
-  [[ "$output" == *$'quiesce_shuffle_for_cleanup\n  clean_lab\n  cleanup_shuffle_swarm_runtime'* ]]
+  [[ "$output" == *$'quiesce_shuffle_for_cleanup\n  remove_shuffle_swarm_services_before_compose\n  clean_lab\n  remove_shuffle_execution_overlay_after_compose'* ]]
 }
 
 @test "reset uses the same dependency-safe teardown order" {
   run awk '/^reset_cmd\(\)/,/^}/ {print}' "$INSTALL"
   [ "$status" -eq 0 ]
-  [[ "$output" == *$'quiesce_shuffle_for_cleanup\n  clean_lab\n  cleanup_shuffle_swarm_runtime'* ]]
+  [[ "$output" == *$'quiesce_shuffle_for_cleanup\n  remove_shuffle_swarm_services_before_compose\n  clean_lab\n  remove_shuffle_execution_overlay_after_compose'* ]]
+}
+
+@test "cleanup recognizes Shuffle app and tool services by network membership" {
+  run grep -F 'docker service inspect' "$INSTALL"
+  [ "$status" -eq 0 ]
+  run grep -F 'shuffle_shuffle' "$INSTALL"
+  [ "$status" -eq 0 ]
+  run grep -F 'SHUFFLE_SWARM_NETWORK_NAME' "$INSTALL"
+  [ "$status" -eq 0 ]
 }
