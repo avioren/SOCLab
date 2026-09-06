@@ -5,6 +5,8 @@ setup() {
   INSTALL="$REPO_ROOT/install.sh"
   COMMON="$REPO_ROOT/lib/common.sh"
   WAZUH="$REPO_ROOT/lib/wazuh.sh"
+  HEALTH="$REPO_ROOT/lib/healthcheck.sh"
+  CREDS="$REPO_ROOT/lib/credentials.sh"
 }
 
 @test "port contract is sourced through install runtime and has no duplicate host protocol tuples" {
@@ -13,12 +15,36 @@ setup() {
   [ -z "$output" ]
 }
 
-@test "Wazuh API stays on host TCP 55000 with no obsolete recovery port" {
-  run grep -F 'Wazuh API|127.0.0.1|55000|tcp|55000' "$COMMON"
+@test "SOCLab configures the actual Wazuh API listener on TCP 15500" {
+  run grep -F 'WAZUH_API_PORT="${WAZUH_API_PORT:-15500}"' "$WAZUH"
   [ "$status" -eq 0 ]
-  run grep -F '127.0.0.1:55000:55000' "$WAZUH"
+  run grep -F 'Wazuh API|127.0.0.1|${WAZUH_API_PORT:-15500}|tcp|${WAZUH_API_PORT:-15500}' "$COMMON"
   [ "$status" -eq 0 ]
-  run grep -R -E '1[5]500' "$REPO_ROOT" --exclude-dir=.git
+  run grep -F '127.0.0.1:${WAZUH_API_PORT}:${WAZUH_API_PORT}' "$WAZUH"
+  [ "$status" -eq 0 ]
+}
+
+@test "Wazuh API port is changed through manager and dashboard configuration not only Docker NAT" {
+  run grep -F '/var/wazuh-manager/api/configuration/api.yaml' "$WAZUH"
+  [ "$status" -eq 0 ]
+  run grep -F '/usr/share/wazuh-dashboard/config/opensearch_dashboards.yml' "$WAZUH"
+  [ "$status" -eq 0 ]
+  run grep -F 'wazuh_core\.hosts' "$WAZUH"
+  [ "$status" -eq 0 ]
+  run grep -F 'configure_wazuh_api_runtime' "$INSTALL"
+  [ "$status" -eq 0 ]
+  run grep -F 'verify_wazuh_api_runtime_configuration' "$INSTALL"
+  [ "$status" -eq 0 ]
+}
+
+@test "runtime URLs use configured Wazuh API port rather than localhost 55000" {
+  run grep -F 'https://localhost:${WAZUH_API_PORT}' "$INSTALL"
+  [ "$status" -eq 0 ]
+  run grep -F 'WAZUH_API_URL=https://localhost:${WAZUH_API_PORT}' "$CREDS"
+  [ "$status" -eq 0 ]
+  run grep -F 'https://localhost:${WAZUH_API_PORT}' "$HEALTH"
+  [ "$status" -eq 0 ]
+  run grep -R -F 'https://localhost:55000' "$INSTALL" "$HEALTH" "$CREDS"
   [ "$status" -ne 0 ]
 }
 
@@ -35,7 +61,7 @@ setup() {
     'Wazuh dashboard|0.0.0.0|${WAZUH_DASHBOARD_PORT:-8443}|tcp|5601' \
     'Wazuh indexer|0.0.0.0|9200|tcp|9200' \
     'Shuffle OpenSearch|127.0.0.1|${SHUFFLE_OPENSEARCH_PORT:-9201}|tcp|9200' \
-    'Wazuh API|127.0.0.1|55000|tcp|55000'; do
+    'Wazuh API|127.0.0.1|${WAZUH_API_PORT:-15500}|tcp|${WAZUH_API_PORT:-15500}'; do
     run grep -F "$needle" "$COMMON"
     [ "$status" -eq 0 ]
   done
@@ -62,13 +88,13 @@ setup() {
   [ "$status" -eq 0 ]
 }
 
-@test "Wazuh compose keeps Tenzir 1514 free while preserving enrollment syslog and API ports" {
+@test "Wazuh compose keeps Tenzir 1514 free while preserving enrollment syslog and configured API port" {
   run grep -F 'Wazuh still publishes host TCP/1514; this would conflict with Shuffle/Tenzir.' "$WAZUH"
   [ "$status" -eq 0 ]
   run grep -F '1515:1515' "$WAZUH"
   [ "$status" -eq 0 ]
   run grep -F '514:514/udp' "$WAZUH"
   [ "$status" -eq 0 ]
-  run grep -F 'host TCP/55000 -> container TCP/55000' "$WAZUH"
+  run grep -F 'Wazuh API Docker mapping set to 127.0.0.1:${WAZUH_API_PORT} -> container TCP/${WAZUH_API_PORT}' "$WAZUH"
   [ "$status" -eq 0 ]
 }
