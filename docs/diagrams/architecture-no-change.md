@@ -18,7 +18,9 @@ The Wazuh manager API listener remains configured in `/var/wazuh-manager/api/con
 
 The pinned Wazuh 5.0.0-beta5 Docker repository does not provide `single-node/config/wazuh_dashboard/wazuh.yml`, so SOCLab generates a minimal plugin configuration using Wazuh's supported `hosts -> default -> url/port/username/password/run_as` schema. It targets `https://wazuh.manager` on TCP/15500 with the beta5 default `wazuh-wui` credentials, applies the detected dashboard UID/GID ownership, and bind-mounts the generated file read-only into the plugin runtime path.
 
-Wazuh Docker also initializes the dashboard API connection from the `WAZUH_API_URL` environment variable. SOCLab therefore sets the dashboard service environment to `WAZUH_API_URL=https://wazuh.manager:15500` before first startup and verifies that exact value on the running container. This prevents the image initializer from regenerating the upstream default TCP/55000 endpoint after the plugin file has been prepared.
+Wazuh Docker also initializes the dashboard API host from the `WAZUH_API_URL` environment variable. That variable is a host/base URL, not a host-plus-port field. SOCLab therefore keeps it at the upstream-supported `WAZUH_API_URL=https://wazuh.manager` value and stores the non-default API port only in `wazuh.yml`. Supplying `https://wazuh.manager:15500` in the environment causes the image initializer to append its default port and can produce an invalid endpoint such as `https://wazuh.manager:15500:55000`.
+
+Runtime verification now checks the host-only environment value, the read-only `wazuh.yml` mount, `port: 15500` in the live plugin configuration, dashboard-to-manager connectivity on TCP/15500, and absence of fallback/malformed TCP/55000 manager URLs in recent dashboard logs.
 
 `opensearch_dashboards.yml` remains responsible for the dashboard/OpenSearch server configuration and is not used as the Wazuh manager API endpoint configuration.
 
