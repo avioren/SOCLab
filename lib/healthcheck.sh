@@ -161,6 +161,7 @@ final_health() {
   wait_wazuh_service "wazuh.indexer" 30 || die "Indexer lost health after Shuffle startup."
   wait_wazuh_service "wazuh.manager" 30 || die "Manager lost health after Shuffle startup."
   wait_wazuh_service "wazuh.dashboard" 30 || die "Dashboard lost health after Shuffle startup."
+  verify_wazuh_api_runtime_configuration
 
   local dash_code
   dash_code="$(curl -ksS -o /tmp/soclab-dashboard-final.out -w '%{http_code}' --max-time 10 \
@@ -209,7 +210,7 @@ Execution net:   ${SHUFFLE_SWARM_NETWORK_NAME}
 
 Wazuh Dashboard: https://localhost:${WAZUH_DASHBOARD_PORT}
 Wazuh Indexer:   https://localhost:9200
-Wazuh API:       https://localhost:55000
+Wazuh API:       https://localhost:${WAZUH_API_PORT}
 Shuffle:         http://localhost:${SHUFFLE_FRONTEND_PORT}
 
 Credentials:     ${STATE_DIR}/credentials.txt
@@ -277,9 +278,9 @@ healthcheck_all() {
   fi
 
   code="$(curl -ksS -o /tmp/soclab-hc-api.out -w '%{http_code}' --max-time 10 \
-    https://localhost:55000/ || true)"
+    "https://localhost:${WAZUH_API_PORT}/" || true)"
   if http_api_ok "$code"; then
-    hc_pass "wazuh-api" "HTTP $code on https://localhost:55000"
+    hc_pass "wazuh-api" "HTTP $code on https://localhost:${WAZUH_API_PORT}"
   else
     hc_fail "wazuh-api" "HTTP ${code:-none}"
   fi
@@ -302,7 +303,7 @@ healthcheck_all() {
 
     if [[ -n "$api_user" && -n "$api_pass" ]]; then
       code="$(curl -ksS -o /tmp/soclab-hc-api-auth.out -w '%{http_code}' --max-time 10 \
-        -u "${api_user}:${api_pass}" -X POST 'https://localhost:55000/security/user/authenticate?raw=true' || true)"
+        -u "${api_user}:${api_pass}" -X POST "https://localhost:${WAZUH_API_PORT}/security/user/authenticate?raw=true" || true)"
       [[ "$code" == "200" ]] && hc_pass "wazuh-api-auth" "stored credential authenticated" ||
         hc_fail "wazuh-api-auth" "HTTP ${code:-none}"
     else
@@ -310,6 +311,14 @@ healthcheck_all() {
     fi
   else
     hc_skip "credential-auth" "$STATE_DIR/credentials.txt is not readable"
+  fi
+
+  if [[ -f "$WAZUH_SINGLE/docker-compose.yml" ]]; then
+    if verify_wazuh_api_runtime_configuration >/dev/null 2>&1; then
+      hc_pass "wazuh-api-config" "manager and dashboard both use TCP/${WAZUH_API_PORT}"
+    else
+      hc_fail "wazuh-api-config" "manager/dashboard API configuration mismatch"
+    fi
   fi
 
   shuffle_runtime_health hc_pass hc_fail hc_skip
@@ -369,7 +378,7 @@ status_all() {
   echo "URLs:"
   echo "  Wazuh Dashboard: https://localhost:${WAZUH_DASHBOARD_PORT}"
   echo "  Wazuh Indexer:   https://localhost:9200"
-  echo "  Wazuh API:       https://localhost:55000"
+  echo "  Wazuh API:       https://localhost:${WAZUH_API_PORT}"
   echo "  Shuffle:         http://localhost:${SHUFFLE_FRONTEND_PORT}"
   [[ -f "$STATE_DIR/credentials.txt" ]] && echo "  Credentials:     $STATE_DIR/credentials.txt"
 }
