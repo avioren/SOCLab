@@ -335,7 +335,9 @@ verify_shuffle_overlay_topology() {
 }
 
 wait_shuffle_worker_service() {
-  local timeout="${1:-300}" deadline=$((SECONDS + timeout)) replicas image net_id mounts
+  local timeout="${1:-300}"
+  local deadline replicas image net_id mounts
+  deadline=$((SECONDS + timeout))
   net_id="$(docker network inspect -f '{{.Id}}' "$SHUFFLE_SWARM_NETWORK_NAME" 2>/dev/null || true)"
 
   while (( SECONDS < deadline )); do
@@ -373,15 +375,15 @@ wait_shuffle_worker_service() {
 
 verify_shuffle_backend_db() {
   local code
-  code="$(curl -sS -o /tmp/soclab-shuffle-checkusers.out -w '%{http_code}' --max-time 15 \
-    "http://localhost:${SHUFFLE_BACKEND_PORT}/api/v1/checkusers" || true)"
+  code="$(curl -s -o /tmp/soclab-shuffle-checkusers.out -w '%{http_code}' --max-time 15 \
+    "http://localhost:${SHUFFLE_BACKEND_PORT}/api/v1/checkusers" 2>/dev/null || true)"
   [[ "$code" == "200" ]]
 }
 
 verify_shuffle_opensearch() {
   local password="$1" code health
-  code="$(curl -ksS -u "admin:${password}" -o /tmp/soclab-shuffle-os.out -w '%{http_code}' --max-time 15 \
-    "https://localhost:${SHUFFLE_OPENSEARCH_PORT}/_cluster/health" || true)"
+  code="$(curl -ks -u "admin:${password}" -o /tmp/soclab-shuffle-os.out -w '%{http_code}' --max-time 15 \
+    "https://localhost:${SHUFFLE_OPENSEARCH_PORT}/_cluster/health" 2>/dev/null || true)"
   [[ "$code" == "200" ]] || return 1
   health="$(jq -r '.status // empty' /tmp/soclab-shuffle-os.out 2>/dev/null || true)"
   [[ "$health" == "green" || "$health" == "yellow" ]]

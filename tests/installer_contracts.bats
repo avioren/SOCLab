@@ -176,3 +176,21 @@ setup() {
   run grep -F 'docker network rm "$SHUFFLE_SWARM_NETWORK_NAME"' "$SHUFFLE"
   [ "$status" -eq 0 ]
 }
+
+@test "Shuffle worker timeout is assigned before nounset arithmetic expansion" {
+  run grep -F 'local timeout="${1:-300}"' "$SHUFFLE"
+  [ "$status" -eq 0 ]
+  run grep -F 'deadline=$((SECONDS + timeout))' "$SHUFFLE"
+  [ "$status" -eq 0 ]
+  run grep -F 'local timeout="${1:-300}" deadline=$((SECONDS + timeout))' "$SHUFFLE"
+  [ "$status" -ne 0 ]
+}
+
+@test "Shuffle startup readiness probes suppress expected transient curl transport noise" {
+  run grep -A1 -F 'soclab-shuffle-checkusers.out' "$SHUFFLE"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'2>/dev/null'* ]]
+  run grep -A1 -F 'soclab-shuffle-os.out' "$SHUFFLE"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'2>/dev/null'* ]]
+}
