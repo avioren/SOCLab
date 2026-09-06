@@ -1,13 +1,5 @@
-# Architecture no-change decision
+# Architecture impact: none
 
-This change fixes a Bash `set -u` initialization-order bug in the Shuffle worker readiness gate and suppresses expected transient curl transport noise during startup probes.
+This change fixes installer/runtime validation behavior only. It does not change the SOCLab runtime topology, component boundaries, network model, or Swarm architecture.
 
-The SOCLab runtime architecture is unchanged:
-
-- one-node Docker Swarm manager+worker
-- `shuffle_shuffle` attachable core overlay
-- `shuffle_swarm_executions` attachable execution overlay
-- Shuffle Frontend, Backend, Orborus and OpenSearch core containers
-- `shuffle-workers` execution service
-
-No component, trust boundary, network topology, data flow, or integration contract changed. The existing Eraser runtime architecture and `shuffle-single-node-swarm.md` remain accurate.
+Editable scope for this hotfix is limited to the SOCLab installer and its supporting files. The upstream Shuffle source/runtime tree under `/opt/soclab/Shuffle` is not modified by this repository change.
