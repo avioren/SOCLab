@@ -8,6 +8,7 @@ setup() {
   WAZUH_API_OVERRIDE="$REPO_ROOT/lib/wazuh_dashboard_api_override.sh"
   HEALTH="$REPO_ROOT/lib/healthcheck.sh"
   CREDS="$REPO_ROOT/lib/credentials.sh"
+  BETA5_API_FIXTURE="$REPO_ROOT/tests/fixtures/beta5-api-commented.yaml"
 }
 
 @test "port contract is sourced through install runtime and has no duplicate host protocol tuples" {
@@ -25,10 +26,12 @@ setup() {
   [ "$status" -eq 0 ]
 }
 
-@test "Wazuh beta5 API uses the verified manager path and dashboard supported fields" {
+@test "Wazuh beta5 API uses the verified manager path and deterministic rewrite" {
   run grep -F '/var/wazuh-manager/api/configuration/api.yaml' "$WAZUH_API_OVERRIDE"
   [ "$status" -eq 0 ]
-  run grep -F "host: ['0.0.0.0', '::']" "$WAZUH_API_OVERRIDE"
+  run grep -F 'grep -Ev "^[[:space:]]*(host|port):"' "$WAZUH_API_OVERRIDE"
+  [ "$status" -eq 0 ]
+  run grep -F 'host: [\\\"0.0.0.0\\\", \\\"::\\\"]' "$WAZUH_API_OVERRIDE"
   [ "$status" -eq 0 ]
   run grep -F '/var/ossec/api/configuration/api.yaml' "$WAZUH_API_OVERRIDE"
   [ "$status" -ne 0 ]
@@ -53,6 +56,24 @@ setup() {
   run grep -F 'configure_wazuh_api_runtime' "$INSTALL"
   [ "$status" -eq 0 ]
   run grep -F 'verify_wazuh_api_runtime_configuration' "$INSTALL"
+  [ "$status" -eq 0 ]
+}
+
+@test "beta5 commented api yaml rewrites to one active 15500 listener pair" {
+  tmp="$(mktemp)"
+  cp "$BETA5_API_FIXTURE" "$tmp"
+  run bash -c '
+    cfg="$1"; port=15500; out="${cfg}.out"
+    grep -Ev "^[[:space:]]*(host|port):" "$cfg" >"$out" || true
+    printf "\nhost: [\"0.0.0.0\", \"::\"]\nport: %s\n" "$port" >>"$out"
+    cat "$out" >"$cfg"
+    rm -f "$out"
+    grep -F "host: [\"0.0.0.0\", \"::\"]" "$cfg"
+    grep -F "port: 15500" "$cfg"
+    test "$(grep -Ec "^[[:space:]]*host:" "$cfg")" -eq 1
+    test "$(grep -Ec "^[[:space:]]*port:" "$cfg")" -eq 1
+  ' _ "$tmp"
+  rm -f "$tmp"
   [ "$status" -eq 0 ]
 }
 

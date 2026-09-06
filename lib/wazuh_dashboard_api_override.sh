@@ -24,22 +24,18 @@ configure_wazuh_api_runtime() {
         test -f "$cfg" || { echo "Missing $cfg" >&2; exit 41; }
         port="$SOCLAB_WAZUH_API_PORT"
 
-        # beta5 ships api.yaml mostly commented. Replace an active/commented
-        # setting when present; otherwise append an active setting.
-        if grep -Eq "^[[:space:]]*#?[[:space:]]*port:[[:space:]]*[0-9]+[[:space:]]*$" "$cfg"; then
-          sed -Ei "0,/^[[:space:]]*#?[[:space:]]*port:[[:space:]]*[0-9]+[[:space:]]*$/s//port: ${port}/" "$cfg"
-        else
-          printf "\nport: %s\n" "$port" >>"$cfg"
-        fi
-
-        if grep -Eq "^[[:space:]]*#?[[:space:]]*host:[[:space:]]*" "$cfg"; then
-          sed -Ei "0,/^[[:space:]]*#?[[:space:]]*host:[[:space:]].*$/s//host: ['\''0.0.0.0'\'', '\''::'\'']/" "$cfg"
-        else
-          printf "host: ['\''0.0.0.0'\'', '\''::'\'']\n" >>"$cfg"
-        fi
+        # beta5 ships api.yaml mostly commented. Preserve vendor comments and
+        # remove only already-active top-level host/port entries. Then append
+        # one authoritative SOCLab pair. JSON-style lists are valid YAML and
+        # avoid fragile nested single-quote handling inside sh -lc.
+        tmp="${cfg}.soclab.$$"
+        grep -Ev "^[[:space:]]*(host|port):" "$cfg" >"$tmp" || true
+        printf "\\nhost: [\\\"0.0.0.0\\\", \\\"::\\\"]\\nport: %s\\n" "$port" >>"$tmp"
+        cat "$tmp" >"$cfg"
+        rm -f "$tmp"
 
         grep -Eq "^[[:space:]]*port:[[:space:]]*${port}[[:space:]]*$" "$cfg"
-        grep -Fq "host: ['0.0.0.0', '::']" "$cfg"
+        grep -Fq "host: [\\\"0.0.0.0\\\", \\\"::\\\"]" "$cfg"
       '); then
     die "Could not configure Wazuh manager API listener on TCP/${WAZUH_API_PORT}."
   fi
@@ -121,8 +117,8 @@ verify_wazuh_api_runtime_configuration() {
   [[ -n "$manager_id" && -n "$dashboard_id" ]] || die "Cannot verify Wazuh API runtime configuration; manager/dashboard container missing."
 
   docker exec "$manager_id" sh -lc \
-    "grep -Eq '^[[:space:]]*port:[[:space:]]*${WAZUH_API_PORT}[[:space:]]*$' /var/wazuh-manager/api/configuration/api.yaml && grep -Fq \"host: ['0.0.0.0', '::']\" /var/wazuh-manager/api/configuration/api.yaml" || \
-    die "Running Wazuh beta5 manager API configuration is not set to host ['0.0.0.0', '::'] and TCP/${WAZUH_API_PORT}."
+    "grep -Eq '^[[:space:]]*port:[[:space:]]*${WAZUH_API_PORT}[[:space:]]*$' /var/wazuh-manager/api/configuration/api.yaml && grep -Fq 'host: [\"0.0.0.0\", \"::\"]' /var/wazuh-manager/api/configuration/api.yaml" || \
+    die "Running Wazuh beta5 manager API configuration is not set to host [0.0.0.0, ::] and TCP/${WAZUH_API_PORT}."
 
   dashboard_env="$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$dashboard_id" | grep '^WAZUH_API_URL=' || true)"
   [[ "$dashboard_env" == "WAZUH_API_URL=https://wazuh.manager" ]] || \

@@ -1,0 +1,6 @@
+# beta5 ships this API configuration mostly commented.
+# host: 0.0.0.0
+# port: 55000
+# access:
+#  max_login_attempts: 50
+# drop_privileges: yes
