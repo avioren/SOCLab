@@ -13,12 +13,12 @@ configure_wazuh_api_runtime() {
 
   phase "CONFIGURE WAZUH API TCP/${WAZUH_API_PORT}"
 
-  log "Configuring manager API listener in the persistent Wazuh API configuration volume"
+  log "Configuring manager API listener in /var/ossec/api/configuration/api.yaml"
   if ! (cd "$WAZUH_SINGLE" && docker compose run --rm --no-deps \
       -e "SOCLAB_WAZUH_API_PORT=${WAZUH_API_PORT}" \
       --entrypoint sh wazuh.manager -lc '
         set -eu
-        cfg=/var/wazuh-manager/api/configuration/api.yaml
+        cfg=/var/ossec/api/configuration/api.yaml
         test -f "$cfg" || { echo "Missing $cfg" >&2; exit 41; }
         port="$SOCLAB_WAZUH_API_PORT"
         if grep -Eq "^[[:space:]]*#?[[:space:]]*port:[[:space:]]*[0-9]+[[:space:]]*$" "$cfg"; then
@@ -26,7 +26,13 @@ configure_wazuh_api_runtime() {
         else
           printf "\nport: %s\n" "$port" >>"$cfg"
         fi
+        if grep -Eq "^[[:space:]]*#?[[:space:]]*host:[[:space:]]*" "$cfg"; then
+          sed -Ei "0,/^[[:space:]]*#?[[:space:]]*host:[[:space:]].*$/s//host: ['\''0.0.0.0'\'', '\''::'\'']/" "$cfg"
+        else
+          printf "host: ['\''0.0.0.0'\'', '\''::'\'']\n" >>"$cfg"
+        fi
         grep -Eq "^[[:space:]]*port:[[:space:]]*${port}[[:space:]]*$" "$cfg"
+        grep -Fq "host: ['0.0.0.0', '::']" "$cfg"
       '); then
     die "Could not configure Wazuh manager API listener on TCP/${WAZUH_API_PORT}."
   fi
@@ -98,7 +104,7 @@ PY
   (cd "$WAZUH_SINGLE" && docker compose config --quiet) || \
     die "Wazuh Compose became invalid after dashboard API configuration patch."
 
-  ok "Wazuh manager API configured on TCP/${WAZUH_API_PORT}; dashboard URL is host-only and plugin port is ${WAZUH_API_PORT}"
+  ok "Wazuh manager API configured in /var/ossec/api/configuration/api.yaml on TCP/${WAZUH_API_PORT}; dashboard URL is host-only and plugin port is ${WAZUH_API_PORT}"
 }
 
 verify_wazuh_api_runtime_configuration() {
@@ -108,8 +114,8 @@ verify_wazuh_api_runtime_configuration() {
   [[ -n "$manager_id" && -n "$dashboard_id" ]] || die "Cannot verify Wazuh API runtime configuration; manager/dashboard container missing."
 
   docker exec "$manager_id" sh -lc \
-    "grep -Eq '^[[:space:]]*port:[[:space:]]*${WAZUH_API_PORT}[[:space:]]*$' /var/wazuh-manager/api/configuration/api.yaml" || \
-    die "Running Wazuh manager API configuration is not set to TCP/${WAZUH_API_PORT}."
+    "grep -Eq '^[[:space:]]*port:[[:space:]]*${WAZUH_API_PORT}[[:space:]]*$' /var/ossec/api/configuration/api.yaml && grep -Fq \"host: ['0.0.0.0', '::']\" /var/ossec/api/configuration/api.yaml" || \
+    die "Running Wazuh manager API configuration is not set to host ['0.0.0.0', '::'] and TCP/${WAZUH_API_PORT}."
 
   dashboard_env="$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$dashboard_id" | grep '^WAZUH_API_URL=' || true)"
   [[ "$dashboard_env" == "WAZUH_API_URL=https://wazuh.manager" ]] || \
@@ -141,5 +147,5 @@ verify_wazuh_api_runtime_configuration() {
     die "Wazuh dashboard logs still show an invalid/default TCP/55000 manager API endpoint."
   fi
 
-  ok "Wazuh API endpoint contract verified: host-only dashboard URL + plugin TCP/${WAZUH_API_PORT}"
+  ok "Wazuh API endpoint contract verified: /var/ossec listener TCP/${WAZUH_API_PORT} + host-only dashboard URL + plugin TCP/${WAZUH_API_PORT}"
 }
