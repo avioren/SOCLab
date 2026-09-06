@@ -48,6 +48,154 @@ EOF
   mmc="$(sysctl -n vm.max_map_count 2>/dev/null || echo 0)"
   (( mmc >= 262144 )) || die "vm.max_map_count did not apply correctly."
   ok "vm.max_map_count=$mmc"
+
+  # Prove the complete Wazuh + Shuffle + Tenzir + Swarm port plan before
+  # spending time cloning sources, generating certificates, or starting data.
+  preflight_soclab_ports
+}
+
+soclab_application_port_contract() {
+  # owner|bind_ip|host_port|protocol|container_port
+  # Same container-internal port numbers are safe across separate network
+  # namespaces. The host-side tuple (protocol, port) must be unique.
+  cat <<EOF
+Wazuh syslog|0.0.0.0|514|udp|514
+Shuffle/Tenzir syslog|0.0.0.0|1514|tcp|1514
+Wazuh enrollment|0.0.0.0|1515|tcp|1515
+Wazuh agent events|0.0.0.0|${WAZUH_AGENT_PORT:-15140}|tcp|1514
+Shuffle frontend HTTP|0.0.0.0|${SHUFFLE_FRONTEND_PORT:-3001}|tcp|80
+Shuffle frontend HTTPS|0.0.0.0|${SHUFFLE_HTTPS_PORT:-3443}|tcp|443
+Shuffle backend API|0.0.0.0|${SHUFFLE_BACKEND_PORT:-5001}|tcp|5001
+Shuffle/Tenzir API|0.0.0.0|5160|tcp|5160
+Wazuh dashboard|0.0.0.0|${WAZUH_DASHBOARD_PORT:-8443}|tcp|5601
+Wazuh indexer|0.0.0.0|9200|tcp|9200
+Shuffle OpenSearch|127.0.0.1|${SHUFFLE_OPENSEARCH_PORT:-9201}|tcp|9200
+Wazuh API|127.0.0.1|55000|tcp|55000
+EOF
+}
+
+soclab_swarm_port_contract() {
+  # owner|bind_ip|host_port|protocol|purpose
+  cat <<'EOF'
+Docker Swarm manager|0.0.0.0|2377|tcp|manager control plane
+Docker Swarm gossip|0.0.0.0|7946|tcp|node discovery/communication
+Docker Swarm gossip|0.0.0.0|7946|udp|node discovery/communication
+Docker Swarm VXLAN|0.0.0.0|4789|udp|overlay data plane
+EOF
+}
+
+validate_soclab_port_contract() {
+  local owner bind port proto target key
+  declare -A seen=()
+
+  while IFS='|' read -r owner bind port proto target; do
+    [[ -n "$owner" ]] || continue
+    [[ "$port" =~ ^[0-9]+$ ]] || die "Invalid port '$port' in SOCLab port contract ($owner)."
+    (( port >= 1 && port <= 65535 )) || die "Port $port is outside 1-65535 ($owner)."
+    [[ "$proto" == tcp || "$proto" == udp ]] || die "Invalid protocol '$proto' for $owner."
+    key="${proto}:${port}"
+    if [[ -n "${seen[$key]:-}" ]]; then
+      die "SOCLab port contract collision on $key: '$owner' conflicts with '${seen[$key]}'."
+    fi
+    seen[$key]="$owner"
+  done < <(cat <(soclab_application_port_contract) <(soclab_swarm_port_contract))
+
+  ok "Static port contract is collision-free across application and Swarm host ports"
+}
+
+dump_port_conflict_diagnostics() {
+  local port="$1" proto="$2"
+  warn "Port diagnostics for ${proto^^}/${port}:"
+
+  if [[ "$proto" == tcp ]]; then
+    ss -H -ltnp 2>/dev/null | grep -E "[:.]${port}[[:space:]]" || true
+  else
+    ss -H -lunp 2>/dev/null | grep -E "[:.]${port}[[:space:]]" || true
+  fi
+
+  echo "--- Docker published ports ---"
+  docker ps --format 'table {{.Names}}\t{{.Ports}}' 2>/dev/null || true
+
+  if have powershell.exe; then
+    echo "--- Windows listener check ---"
+    if [[ "$proto" == tcp ]]; then
+      powershell.exe -NoProfile -NonInteractive -Command \
+        "Get-NetTCPConnection -LocalPort ${port} -ErrorAction SilentlyContinue | Select-Object LocalAddress,LocalPort,State,OwningProcess | Format-Table -AutoSize" \
+        2>/dev/null | tr -d '\r' || true
+    else
+      powershell.exe -NoProfile -NonInteractive -Command \
+        "Get-NetUDPEndpoint -LocalPort ${port} -ErrorAction SilentlyContinue | Select-Object LocalAddress,LocalPort,OwningProcess | Format-Table -AutoSize" \
+        2>/dev/null | tr -d '\r' || true
+    fi
+  fi
+
+  if have cmd.exe; then
+    echo "--- Windows excluded/reserved ${proto^^} ranges ---"
+    cmd.exe /c "netsh interface ipv4 show excludedportrange protocol=${proto}" \
+      2>/dev/null | tr -d '\r' || true
+  fi
+}
+
+probe_soclab_application_ports() {
+  local image="${SOCLAB_PORT_PROBE_IMAGE:-alpine:3.20}"
+  local owner bind port proto container_port name output
+
+  log "Pulling small Docker port-probe image: $image"
+  docker pull "$image" >/dev/null 2>&1 || die "Could not pull $image for Docker Desktop port preflight."
+
+  while IFS='|' read -r owner bind port proto container_port; do
+    [[ -n "$owner" ]] || continue
+    name="soclab-port-probe-${proto}-${port}"
+    docker rm -f "$name" >/dev/null 2>&1 || true
+
+    if ! output="$(docker run -d --rm --name "$name" \
+        -p "${bind}:${port}:${container_port}/${proto}" \
+        "$image" sh -c 'sleep 30' 2>&1)"; then
+      warn "Docker Desktop failed to publish ${owner} on ${bind}:${port}/${proto}: $output"
+      dump_port_conflict_diagnostics "$port" "$proto"
+      die "Required host port ${port}/${proto} for '$owner' cannot be published. No SOCLab installation was started."
+    fi
+
+    docker rm -f "$name" >/dev/null 2>&1 || true
+    ok "Port probe passed: ${bind}:${port}/${proto} -> ${owner}"
+  done < <(soclab_application_port_contract)
+}
+
+probe_soclab_swarm_ports() {
+  local owner bind port proto purpose
+  local state
+  state="$(docker info --format '{{.Swarm.LocalNodeState}}' 2>/dev/null || echo inactive)"
+  [[ "$state" != "active" ]] || die "Port preflight expected Swarm to be inactive after clean teardown; state=$state."
+
+  while IFS='|' read -r owner bind port proto purpose; do
+    [[ -n "$owner" ]] || continue
+    if ! python3 - "$bind" "$port" "$proto" <<'PY'
+import socket, sys
+host, port, proto = sys.argv[1], int(sys.argv[2]), sys.argv[3]
+kind = socket.SOCK_STREAM if proto == "tcp" else socket.SOCK_DGRAM
+s = socket.socket(socket.AF_INET, kind)
+try:
+    s.bind((host, port))
+    if proto == "tcp":
+        s.listen(1)
+finally:
+    s.close()
+PY
+    then
+      dump_port_conflict_diagnostics "$port" "$proto"
+      die "Docker Swarm prerequisite ${port}/${proto} ($purpose) is already in use inside the Docker Linux host."
+    fi
+    ok "Swarm port probe passed: ${port}/${proto} ($purpose)"
+  done < <(soclab_swarm_port_contract)
+}
+
+preflight_soclab_ports() {
+  phase "PORT CONTRACT PREFLIGHT - WAZUH + SHUFFLE + TENZIR + SWARM"
+  log "Host 55000 remains the Wazuh API port; it is not remapped."
+  validate_soclab_port_contract
+  probe_soclab_swarm_ports
+  probe_soclab_application_ports
+  ok "All required SOCLab host ports are unique and bindable through the correct runtime layer"
 }
 
 remove_compose_project_resources() {
@@ -131,9 +279,6 @@ remove_all_single_node_swarm_services() {
     die "Could not remove all services from the dedicated one-node Swarm."
   fi
 
-  # Remove any orphaned task containers left by deleted services. This is what
-  # prevents frikky/shuffle-tools and other Shuffle app tasks from appearing to
-  # respawn during network cleanup.
   mapfile -t tasks < <(docker ps -aq --filter 'label=com.docker.swarm.service.name' 2>/dev/null || true)
   if (( ${#tasks[@]} )); then
     log "Removing ${#tasks[@]} residual Swarm task container(s)"
@@ -144,9 +289,6 @@ remove_all_single_node_swarm_services() {
 remove_tenzir_runtime() {
   local deadline cid cname
 
-  # Tenzir is created by Shuffle/Orborus as a standalone container on its own
-  # bridge network, so Swarm-service cleanup and Shuffle overlay cleanup do not
-  # necessarily see it. Remove it explicitly after Orborus has been stopped.
   if docker inspect tenzir-node >/dev/null 2>&1; then
     log "Removing SOCLab Tenzir runtime container tenzir-node"
     docker rm -f -v tenzir-node >/dev/null 2>&1 || die "Could not remove Tenzir runtime container 'tenzir-node'."
@@ -193,9 +335,6 @@ leave_dedicated_single_node_swarm() {
   state="$(docker info --format '{{.Swarm.LocalNodeState}}' 2>/dev/null || echo inactive)"
   [[ "$state" != "active" ]] || die "Docker remained in Swarm mode after forced single-node leave."
 
-  # The daemon should remove swarm-scoped overlays when leaving. If a named
-  # SOCLab overlay remains locally, it no longer has a Swarm service reference
-  # and can now be removed deterministically.
   for net in shuffle_shuffle "$SHUFFLE_SWARM_NETWORK_NAME"; do
     docker network inspect "$net" >/dev/null 2>&1 || continue
     log "Removing stale post-Swarm network $net"
@@ -209,14 +348,7 @@ leave_dedicated_single_node_swarm() {
 clean_lab() {
   phase "PHASE 1/7 - ERASE PREVIOUS SOC LAB"
 
-  # This lab intentionally owns its single-node Swarm. Remove the service
-  # objects first (not their task containers) so Docker cannot respawn
-  # shuffle-tools/app workers while Compose and overlays are being removed.
   remove_all_single_node_swarm_services
-
-  # Tenzir is not a Swarm service; Orborus creates it as a standalone runtime
-  # container on tenzir-network. Remove both explicitly before Compose/Swarm
-  # teardown so it cannot survive a failed installation.
   remove_tenzir_runtime
 
   if [[ -f "$WAZUH_SINGLE/docker-compose.yml" ]]; then
@@ -231,10 +363,6 @@ clean_lab() {
   remove_compose_project_resources "shuffle"
   remove_historical_exact_wazuh_names
 
-  # Compose containers are gone, so it is now safe to destroy the old
-  # single-node Swarm metadata/overlay state. install_shuffle() later calls
-  # ensure_shuffle_swarm_prereqs() and creates a fresh manager + ingress +
-  # shuffle_swarm_executions overlay.
   leave_dedicated_single_node_swarm
 
   if [[ -d "$ROOT_DIR" ]]; then log "Deleting $ROOT_DIR"; rm -rf --one-file-system "$ROOT_DIR"; fi
@@ -245,7 +373,6 @@ clean_lab() {
   if docker inspect tenzir-node >/dev/null 2>&1; then die "Residual Tenzir container remains after cleanup."; fi
   if docker network inspect tenzir-network >/dev/null 2>&1; then die "Residual Tenzir network remains after cleanup."; fi
   if docker service ls -q >/dev/null 2>&1; then
-    # docker service ls should no longer be available because Swarm was reset.
     docker service ls -q 2>/dev/null | grep -q . && die "Residual Swarm services remain after cleanup."
   fi
   ok "Previous SOC lab state removed; old single-node Swarm state cleared"

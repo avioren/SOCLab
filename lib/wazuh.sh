@@ -30,6 +30,15 @@ text = re.sub(r'(?m)^(\s*-\s*)"?0\.0\.0\.0:1514:1514"?\s*$', rf'\1"0.0.0.0:{agen
 if text == before_agent and f"{agent_port}:1514" not in text:
     raise SystemExit("Could not locate Wazuh agent host port mapping 1514:1514")
 
+# Keep the Wazuh API on TCP/55000. Only the bind scope changes from all
+# interfaces to loopback. Dashboard-to-manager traffic stays internal to the
+# Compose network, while local Windows/WSL API access remains localhost:55000.
+before_api = text
+text = re.sub(r'(?m)^(\s*-\s*)"?55000:55000"?\s*$', r'\1"127.0.0.1:55000:55000"', text)
+text = re.sub(r'(?m)^(\s*-\s*)"?0\.0\.0\.0:55000:55000"?\s*$', r'\1"127.0.0.1:55000:55000"', text)
+if text == before_api and "127.0.0.1:55000:55000" not in text:
+    raise SystemExit("Could not locate Wazuh API host port mapping 55000:55000")
+
 p.write_text(text)
 PY
 
@@ -39,8 +48,18 @@ PY
     die "Wazuh still publishes host TCP/1514; this would conflict with Shuffle/Tenzir."
   fi
 
+  grep -Fq '127.0.0.1:55000:55000' "$compose" || \
+    die "Wazuh API must stay on host/container TCP/55000 with a loopback-only host binding."
+  if grep -Eq '(^|[[:space:]"-])0\.0\.0\.0:55000:55000([[:space:]"$]|$)' "$compose"; then
+    die "Wazuh API is still bound on all interfaces; expected loopback host TCP/55000."
+  fi
+
+  grep -Eq '(^|[^0-9])1515:1515([^0-9]|$)' "$compose" || die "Wazuh enrollment TCP/1515 mapping is missing."
+  grep -Eq '(^|[^0-9])514:514/udp([^0-9]|$)' "$compose" || die "Wazuh syslog UDP/514 mapping is missing."
+
   ok "Wazuh dashboard mapped to https://localhost:${WAZUH_DASHBOARD_PORT}"
   ok "Wazuh agent mapped to host TCP/${WAZUH_AGENT_PORT} -> container TCP/1514; host TCP/1514 reserved for Shuffle/Tenzir"
+  ok "Wazuh API remains https://localhost:55000 (host TCP/55000 -> container TCP/55000, loopback only)"
 }
 
 detect_wazuh_image_accounts() {
