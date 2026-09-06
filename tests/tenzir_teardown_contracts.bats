@@ -30,3 +30,19 @@ setup() {
   run grep -F 'Residual Tenzir network remains after cleanup.' "$COMMON"
   [ "$status" -eq 0 ]
 }
+
+@test "Tenzir cleanup returns success when runtime is already absent under errexit" {
+  run bash -c '
+    set -Eeuo pipefail
+    source "$1"
+    docker() { return 1; }
+    remove_tenzir_runtime
+  ' _ "$COMMON"
+  [ "$status" -eq 0 ]
+}
+
+@test "Tenzir cleanup has an explicit successful return after absence checks" {
+  block="$(awk '/^remove_tenzir_runtime\(\)/,/^}/ {print}' "$COMMON")"
+  [[ "$block" == *'return 0'* ]]
+  [[ "$block" == *'if docker inspect tenzir-node'* ]]
+}
