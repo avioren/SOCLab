@@ -164,3 +164,6 @@ EOF
 
   ok "Fresh Wazuh TLS certificates generated with image-matched ownership"
 }
+
+# shellcheck source=lib/wazuh_dashboard_api_override.sh
+source "$SCRIPT_DIR/lib/wazuh_dashboard_api_override.sh"
