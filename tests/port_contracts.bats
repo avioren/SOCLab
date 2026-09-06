@@ -25,12 +25,12 @@ setup() {
   [ "$status" -eq 0 ]
 }
 
-@test "Wazuh API uses the documented manager path and dashboard supported fields" {
-  run grep -F '/var/ossec/api/configuration/api.yaml' "$WAZUH_API_OVERRIDE"
+@test "Wazuh beta5 API uses the verified manager path and dashboard supported fields" {
+  run grep -F '/var/wazuh-manager/api/configuration/api.yaml' "$WAZUH_API_OVERRIDE"
   [ "$status" -eq 0 ]
   run grep -F "host: ['0.0.0.0', '::']" "$WAZUH_API_OVERRIDE"
   [ "$status" -eq 0 ]
-  run grep -F '/var/wazuh-manager/api/configuration/api.yaml' "$WAZUH_API_OVERRIDE"
+  run grep -F '/var/ossec/api/configuration/api.yaml' "$WAZUH_API_OVERRIDE"
   [ "$status" -ne 0 ]
   run grep -F '/usr/share/wazuh-dashboard/data/wazuh/config/wazuh.yml' "$WAZUH_API_OVERRIDE"
   [ "$status" -eq 0 ]
