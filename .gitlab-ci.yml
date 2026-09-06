@@ -2,6 +2,7 @@ stages:
   - security
   - lint
   - test
+  - architecture
   - docs
 
 secret_scan:
@@ -32,6 +33,17 @@ unit_tests:
   stage: test
   script:
     - bats tests
+
+architecture_impact:
+  image: alpine:3.20
+  stage: architecture
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+  before_script:
+    - apk add --no-cache bash git
+    - git fetch origin "$CI_MERGE_REQUEST_TARGET_BRANCH_NAME" --depth=100
+  script:
+    - bash scripts/check-architecture-impact.sh
 
 mkdocs_check:
   image: python:3.13-slim
