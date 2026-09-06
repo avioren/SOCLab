@@ -47,6 +47,6 @@ SOCLab may remove only its own Swarm worker/app services and dedicated execution
 
 Shuffle OpenSearch is single-node/local for this lab. Its data path must not float across Swarm nodes. Wazuh and Shuffle OpenSearch remain separate datastores.
 
-## Diagram synchronization
+## Architecture documentation
 
-GitLab is the source of truth for this architecture decision. The shared Eraser runtime and installation diagrams referenced by `eraser-manifest.yml` should reflect this topology; the manifest defines the authoritative scope when visual editing cannot be performed in the same change.
+GitLab is the authoritative source for this architecture decision. Any topology or installation-flow change is documented and reviewed directly in this repository under `docs/diagrams/`; no external diagram service is required.

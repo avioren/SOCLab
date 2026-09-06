@@ -27,7 +27,7 @@ fi
 
 cat >&2 <<'EOF'
 Architecture-sensitive implementation changed without an architecture decision.
-Update docs/diagrams/ (Eraser manifest/source/metadata) in this merge request.
+Update the versioned architecture documentation under docs/diagrams/ in this merge request.
 If architecture is genuinely unchanged, add/update docs/diagrams/architecture-no-change.md with the reason.
 EOF
 exit 1
