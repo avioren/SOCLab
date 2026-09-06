@@ -99,7 +99,7 @@ PY
   grep -Fq 'WAZUH_API_URL=https://wazuh.manager' "$WAZUH_SINGLE/docker-compose.yml" || \
     die "Wazuh dashboard initializer API URL is not host-only https://wazuh.manager."
   if grep -Eq 'WAZUH_API_URL=https://wazuh\.manager:[0-9]+' "$WAZUH_SINGLE/docker-compose.yml"; then
-    die "Wazuh dashboard initializer API URL incorectly contains a port; the port belongs in wazuh.yml."
+    die "Wazuh dashboard initializer API URL incorrectly contains a port; the port belongs in wazuh.yml."
   fi
   grep -Fq '/usr/share/wazuh-dashboard/data/wazuh/config/wazuh.yml:ro' "$WAZUH_SINGLE/docker-compose.yml" || \
     die "Wazuh dashboard wazuh.yml bind mount is missing after patch."
@@ -129,7 +129,7 @@ verify_wazuh_api_runtime_configuration() {
     die "Running Wazuh dashboard does not have the SOCLab wazuh.yml bind mount."
 
   docker exec "$dashboard_id" sh -lc \
-    "grep -Eq '^[[:space:]]*port:[[:space:]]*${WAZUH_API_PORT}[[:space:]]*$' /usr/share/wazuh-dashboard/data/wazuh/config/wazuh.yml && grep -Fq 'url: https://wazuh.manager' /usr/share/wazuh-dashboard/data/wazuh/config/wazuh.yml && ! grep -Eq '^[[:space:]]*port:[[:space:]]*255000[[:space:]]*$' /usr/share/wazuh-dashboard/data/wazuh/config/wazuh.yml" || \
+    "grep -Eq '^[[:space:]]*port:[[:space:]]*${WAZUH_API_PORT}[[:space:]]*$' /usr/share/wazuh-dashboard/data/wazuh/config/wazuh.yml && grep -Fq 'url: https://wazuh.manager' /usr/share/wazuh-dashboard/data/wazuh/config/wazuh.yml && ! grep -Eq '^[[:space:]]*port:[[:space:]]*55000[[:space:]]*$' /usr/share/wazuh-dashboard/data/wazuh/config/wazuh.yml" || \
     die "Running Wazuh dashboard plugin configuration does not exclusively reference wazuh.manager API TCP/${WAZUH_API_PORT}."
 
   manager_code="$(docker exec "$manager_id" sh -lc \
