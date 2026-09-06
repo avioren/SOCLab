@@ -49,8 +49,6 @@ EOF
   (( mmc >= 262144 )) || die "vm.max_map_count did not apply correctly."
   ok "vm.max_map_count=$mmc"
 
-  # Prove the complete Wazuh + Shuffle + Tenzir + Swarm port plan before
-  # spending time cloning sources, generating certificates, or starting data.
   preflight_soclab_ports
 }
 
@@ -70,7 +68,7 @@ Shuffle/Tenzir API|0.0.0.0|5160|tcp|5160
 Wazuh dashboard|0.0.0.0|${WAZUH_DASHBOARD_PORT:-8443}|tcp|5601
 Wazuh indexer|0.0.0.0|9200|tcp|9200
 Shuffle OpenSearch|127.0.0.1|${SHUFFLE_OPENSEARCH_PORT:-9201}|tcp|9200
-Wazuh API|127.0.0.1|55000|tcp|55000
+Wazuh API|127.0.0.1|${WAZUH_API_PORT:-15500}|tcp|${WAZUH_API_PORT:-15500}
 EOF
 }
 
@@ -191,7 +189,7 @@ PY
 
 preflight_soclab_ports() {
   phase "PORT CONTRACT PREFLIGHT - WAZUH + SHUFFLE + TENZIR + SWARM"
-  log "Host 55000 remains the Wazuh API port; it is not remapped."
+  log "Wazuh API is configured to listen on TCP/${WAZUH_API_PORT:-15500}; upstream default TCP/55000 is not used by SOCLab."
   validate_soclab_port_contract
   probe_soclab_swarm_ports
   probe_soclab_application_ports
