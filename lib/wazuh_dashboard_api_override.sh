@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
 # shellcheck shell=bash
 
-# Wazuh Dashboard's Wazuh-plugin API endpoint is stored in wazuh.yml. Wazuh
-# 5.0.0-beta5 does not ship single-node/config/wazuh_dashboard/wazuh.yml in the
-# pinned Docker repository, so SOCLab generates the supported plugin config and
-# mounts it explicitly into the dashboard container.
+# Wazuh Dashboard's effective API endpoint is initialized from the Docker
+# environment and persisted in the Wazuh plugin configuration. Keep both
+# sources aligned so the image entrypoint cannot regenerate TCP/55000.
 configure_wazuh_api_runtime() {
   [[ "$WAZUH_API_PORT" =~ ^[0-9]+$ ]] || die "WAZUH_API_PORT must be numeric."
   (( WAZUH_API_PORT >= 1 && WAZUH_API_PORT <= 65535 )) || die "WAZUH_API_PORT must be between 1 and 65535."
@@ -33,21 +32,8 @@ configure_wazuh_api_runtime() {
   local dashboard_cfg="$dashboard_cfg_dir/wazuh.yml"
   mkdir -p "$dashboard_cfg_dir"
 
-  if [[ -f "$dashboard_cfg" ]]; then
-    log "Updating existing Wazuh dashboard plugin manager connection in wazuh.yml to TCP/${WAZUH_API_PORT}"
-    python3 - "$dashboard_cfg" "$WAZUH_API_PORT" <<'PY'
-import pathlib, re, sys
-p = pathlib.Path(sys.argv[1])
-port = sys.argv[2]
-text = p.read_text()
-new, count = re.subn(r'(?m)^(\s*port:\s*)\d+(\s*)$', rf'\g<1>{port}\2', text, count=1)
-if count != 1:
-    raise SystemExit("Could not locate dashboard Wazuh API port in existing wazuh.yml")
-p.write_text(new)
-PY
-  else
-    log "Generating Wazuh dashboard plugin wazuh.yml for manager API TCP/${WAZUH_API_PORT}"
-    cat >"$dashboard_cfg" <<EOF
+  log "Writing Wazuh dashboard plugin API configuration for TCP/${WAZUH_API_PORT}"
+  cat >"$dashboard_cfg" <<EOF
 hosts:
   - default:
       url: https://wazuh.manager
@@ -56,44 +42,62 @@ hosts:
       password: wazuh-wui
       run_as: true
 EOF
-  fi
 
   chmod 0640 "$dashboard_cfg"
   chown "${WAZUH_DASHBOARD_UID}:${WAZUH_DASHBOARD_GID}" "$dashboard_cfg"
 
   grep -Eq "^[[:space:]]*port:[[:space:]]*${WAZUH_API_PORT}[[:space:]]*$" "$dashboard_cfg" || \
     die "Dashboard wazuh.yml does not contain API TCP/${WAZUH_API_PORT}."
-  grep -Fq 'url: https://wazuh.manager' "$dashboard_cfg" || \
-    die "Dashboard wazuh.yml does not target wazuh.manager."
 
-  # Explicitly mount the generated plugin config. This avoids dependence on
-  # image-entrypoint defaults and guarantees the dashboard uses the same API
-  # port as the manager.
-  python3 - "$WAZUH_SINGLE/docker-compose.yml" <<'PY'
+  # Patch the dashboard service's initializer source as well. Wazuh's Docker
+  # image uses WAZUH_API_URL during startup to build the effective API host.
+  # Including the port here prevents the entrypoint from falling back to the
+  # upstream default TCP/55000.
+  python3 - "$WAZUH_SINGLE/docker-compose.yml" "$WAZUH_API_PORT" <<'PY'
 import pathlib, re, sys
 p = pathlib.Path(sys.argv[1])
+port = sys.argv[2]
 text = p.read_text()
+
+m = re.search(r'(?ms)^  wazuh\.dashboard:\n(?P<body>.*?)(?=^  [A-Za-z0-9_.-]+:|^volumes:)', text)
+if not m:
+    raise SystemExit("Could not locate wazuh.dashboard service block")
+body = m.group('body')
+
+new_body, count = re.subn(
+    r'(?m)^(\s*-\s*WAZUH_API_URL=)https://wazuh\.manager(?::\d+)?\s*$',
+    rf'\1https://wazuh.manager:{port}',
+    body,
+    count=1,
+)
+if count != 1:
+    raise SystemExit("Could not locate WAZUH_API_URL in wazuh.dashboard environment")
+
 mount = "      - ./config/wazuh_dashboard/wazuh.yml:/usr/share/wazuh-dashboard/data/wazuh/config/wazuh.yml:ro\n"
-if "/usr/share/wazuh-dashboard/data/wazuh/config/wazuh.yml" not in text:
-    m = re.search(r'(?ms)(^  wazuh\.dashboard:\n.*?^    volumes:\n)(.*?)(?=^    depends_on:|^  [A-Za-z0-9_.-]+:|^volumes:)', text)
-    if not m:
+if "/usr/share/wazuh-dashboard/data/wazuh/config/wazuh.yml" not in new_body:
+    vm = re.search(r'(?ms)(^    volumes:\n)(.*?)(?=^    depends_on:|^    [A-Za-z0-9_.-]+:|\Z)', new_body)
+    if not vm:
         raise SystemExit("Could not locate wazuh.dashboard volumes block")
-    insert_at = m.start(2) + len(m.group(2))
-    text = text[:insert_at] + mount + text[insert_at:]
+    insert_at = vm.start(2) + len(vm.group(2))
+    new_body = new_body[:insert_at] + mount + new_body[insert_at:]
+
+text = text[:m.start('body')] + new_body + text[m.end('body'):]
 p.write_text(text)
 PY
 
+  grep -Fq "WAZUH_API_URL=https://wazuh.manager:${WAZUH_API_PORT}" "$WAZUH_SINGLE/docker-compose.yml" || \
+    die "Wazuh dashboard initializer API URL is not set to wazuh.manager:${WAZUH_API_PORT}."
   grep -Fq '/usr/share/wazuh-dashboard/data/wazuh/config/wazuh.yml:ro' "$WAZUH_SINGLE/docker-compose.yml" || \
     die "Wazuh dashboard wazuh.yml bind mount is missing after patch."
 
   (cd "$WAZUH_SINGLE" && docker compose config --quiet) || \
-    die "Wazuh Compose became invalid after adding dashboard wazuh.yml mount."
+    die "Wazuh Compose became invalid after dashboard API configuration patch."
 
-  ok "Wazuh manager API and dashboard plugin configured for TCP/${WAZUH_API_PORT}"
+  ok "Wazuh manager API and dashboard initializer/plugin configured for TCP/${WAZUH_API_PORT}"
 }
 
 verify_wazuh_api_runtime_configuration() {
-  local manager_id dashboard_id manager_code dashboard_code
+  local manager_id dashboard_id manager_code dashboard_code dashboard_env
   manager_id="$(compose_service_id wazuh.manager)"
   dashboard_id="$(compose_service_id wazuh.dashboard)"
   [[ -n "$manager_id" && -n "$dashboard_id" ]] || die "Cannot verify Wazuh API runtime configuration; manager/dashboard container missing."
@@ -101,6 +105,10 @@ verify_wazuh_api_runtime_configuration() {
   docker exec "$manager_id" sh -lc \
     "grep -Eq '^[[:space:]]*port:[[:space:]]*${WAZUH_API_PORT}[[:space:]]*$' /var/wazuh-manager/api/configuration/api.yaml" || \
     die "Running Wazuh manager API configuration is not set to TCP/${WAZUH_API_PORT}."
+
+  dashboard_env="$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$dashboard_id" | grep '^WAZUH_API_URL=' || true)"
+  [[ "$dashboard_env" == "WAZUH_API_URL=https://wazuh.manager:${WAZUH_API_PORT}" ]] || \
+    die "Running Wazuh dashboard initializer still has '${dashboard_env:-no WAZUH_API_URL}'."
 
   docker exec "$dashboard_id" sh -lc \
     "grep -Eq '^[[:space:]]*port:[[:space:]]*${WAZUH_API_PORT}[[:space:]]*$' /usr/share/wazuh-dashboard/data/wazuh/config/wazuh.yml && grep -Fq 'url: https://wazuh.manager' /usr/share/wazuh-dashboard/data/wazuh/config/wazuh.yml" || \
@@ -120,5 +128,5 @@ verify_wazuh_api_runtime_configuration() {
     *) die "Wazuh dashboard cannot reach manager API on TCP/${WAZUH_API_PORT} (HTTP ${dashboard_code:-none})." ;;
   esac
 
-  ok "Wazuh API is configured and reachable on TCP/${WAZUH_API_PORT}; dashboard plugin wazuh.yml matches the manager"
+  ok "Wazuh API is configured and reachable on TCP/${WAZUH_API_PORT}; dashboard initializer and plugin config agree"
 }
