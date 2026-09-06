@@ -316,7 +316,7 @@ healthcheck_all() {
   fi
 
   if [[ -f "$WAZUH_SINGLE/docker-compose.yml" ]]; then
-    if verify_wazuh_api_runtime_configuration >/dev/null 2>&1; then
+    if ( verify_wazuh_api_runtime_configuration ) >/dev/null 2>&1; then
       hc_pass "wazuh-api-config" "dashboard uses ${WAZUH_API_INTERNAL_PORT}; host remap uses ${WAZUH_API_PORT}"
     else
       hc_fail "wazuh-api-config" "manager/dashboard API configuration mismatch"

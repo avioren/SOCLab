@@ -52,3 +52,11 @@ Generated TLS certificates and private keys stay local under the runtime Wazuh t
 Host-facing operator URLs are HTTPS by default: Wazuh Dashboard, Wazuh Indexer, Wazuh API host remap, Shuffle HTTPS frontend, and Shuffle OpenSearch. Internal Shuffle backend/worker control traffic may remain HTTP where that is the upstream application protocol.
 
 No Wazuh or Shuffle upstream source code is modified. This correction freezes the observed beta5 runtime contract and removes the previously incorrect attempt to force the internal Wazuh API listener to TCP/15500.
+
+## Healthcheck verifier isolation
+
+The reusable `./install.sh healthcheck` command now runs the Wazuh API runtime verifier in a subshell before converting the result into a PASS/FAIL table row.
+
+This does not change the Wazuh or Shuffle architecture, port contract, TLS model, certificates, Docker networks, service dependencies, or install-time hard gates. The verifier itself still uses the same runtime checks and remains strict when called directly or from final install validation.
+
+The change only prevents the verifier's `die`/`exit` path from terminating the reusable healthcheck before the operator can see the complete component table. A Wazuh API config mismatch is therefore reported as `FAIL wazuh-api-config` while all other Wazuh, Shuffle, OpenSearch, Orborus, and worker checks continue to be evaluated.
