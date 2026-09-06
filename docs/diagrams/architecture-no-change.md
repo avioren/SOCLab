@@ -21,7 +21,9 @@ host: ["0.0.0.0", "::"]
 port: 15500
 ```
 
-JSON-style quoted lists are valid YAML and avoid fragile nested shell quoting inside the temporary `docker compose run ... sh -lc` configuration step.
+JSON-style quoted lists are valid YAML.
+
+A later implementation correction changed only how those two YAML lines are emitted inside the temporary `docker compose run ... sh -lc` step. The previous code over-escaped backslashes, causing literal escape characters to be written and the post-write assertions to fail. The corrected implementation uses separate `printf` calls with normal double-quoted shell strings; this exact sequence was verified successfully against the beta5 manager service. This is an implementation-only fix and does not alter the architecture or port contract.
 
 The Docker Compose publication is host TCP/15500 to container TCP/15500. It is not a host-port translation to the upstream default TCP/55000.
 
