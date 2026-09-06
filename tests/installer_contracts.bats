@@ -54,9 +54,15 @@ setup() {
   [ "$status" -ne 0 ]
 }
 
-@test "cleanup never leaves the global swarm by force" {
-  run grep -RE '^[[:space:]]*docker[[:space:]]+swarm[[:space:]]+leave' "$INSTALL" "$REPO_ROOT/lib"
-  [ "$status" -ne 0 ]
+@test "clean install hard-resets only a validated dedicated one-node Swarm" {
+  run grep -F 'validate_dedicated_single_node_swarm' "$COMMON"
+  [ "$status" -eq 0 ]
+  run grep -F 'requires exactly one Swarm node' "$SHUFFLE"
+  [ "$status" -eq 0 ]
+  run grep -F 'hard-reset only a dedicated one-node Swarm' "$COMMON"
+  [ "$status" -eq 0 ]
+  run grep -F 'docker swarm leave --force' "$COMMON"
+  [ "$status" -eq 0 ]
 }
 
 @test "Wazuh service discovery uses Compose service IDs" {
@@ -168,12 +174,23 @@ setup() {
   [ "$status" -eq 0 ]
 }
 
-@test "cleanup removes lab-owned worker services and overlay without destroying Swarm" {
+@test "Shuffle runtime helper can remove worker services and execution overlay" {
   run grep -F 'cleanup_shuffle_swarm_runtime' "$SHUFFLE"
   [ "$status" -eq 0 ]
   run grep -F 'docker service rm shuffle-workers' "$SHUFFLE"
   [ "$status" -eq 0 ]
   run grep -F 'docker network rm "$SHUFFLE_SWARM_NETWORK_NAME"' "$SHUFFLE"
+  [ "$status" -eq 0 ]
+}
+
+@test "dedicated clean install removes service objects before resetting Swarm" {
+  run grep -F 'docker service rm "$sid"' "$COMMON"
+  [ "$status" -eq 0 ]
+  run grep -F "label=com.docker.swarm.service.name" "$COMMON"
+  [ "$status" -eq 0 ]
+  run grep -F 'docker swarm leave --force' "$COMMON"
+  [ "$status" -eq 0 ]
+  run grep -F 'ensure_shuffle_swarm_prereqs' "$SHUFFLE"
   [ "$status" -eq 0 ]
 }
 
@@ -195,19 +212,19 @@ setup() {
   [[ "$output" == *'2>/dev/null'* ]]
 }
 
-@test "install teardown removes Swarm services before Compose and overlay cleanup" {
+@test "install teardown enters dependency-safe cleanup path" {
   run awk '/^install_all\(\)/,/^}/ {print}' "$INSTALL"
   [ "$status" -eq 0 ]
   [[ "$output" == *$'quiesce_shuffle_for_cleanup\n  remove_shuffle_swarm_services_before_compose\n  clean_lab\n  remove_shuffle_execution_overlay_after_compose'* ]]
 }
 
-@test "reset uses the same dependency-safe teardown order" {
+@test "reset uses the same dependency-safe cleanup path" {
   run awk '/^reset_cmd\(\)/,/^}/ {print}' "$INSTALL"
   [ "$status" -eq 0 ]
   [[ "$output" == *$'quiesce_shuffle_for_cleanup\n  remove_shuffle_swarm_services_before_compose\n  clean_lab\n  remove_shuffle_execution_overlay_after_compose'* ]]
 }
 
-@test "cleanup recognizes Shuffle app and tool services by network membership" {
+@test "legacy cleanup still recognizes Shuffle app and tool services by network membership" {
   run grep -F 'docker service inspect' "$INSTALL"
   [ "$status" -eq 0 ]
   run grep -F 'shuffle_shuffle' "$INSTALL"
