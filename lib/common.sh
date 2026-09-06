@@ -85,8 +85,99 @@ remove_historical_exact_wazuh_names() {
   done
 }
 
+validate_dedicated_single_node_swarm() {
+  local state control nodes
+  state="$(docker info --format '{{.Swarm.LocalNodeState}}' 2>/dev/null || echo inactive)"
+  [[ "$state" == "active" ]] || return 1
+
+  control="$(docker info --format '{{.Swarm.ControlAvailable}}' 2>/dev/null || echo false)"
+  [[ "$control" == "true" ]] || die "Docker Swarm is active but this host is not a manager; refusing destructive cleanup."
+
+  docker node ls >/dev/null 2>&1 || die "Docker Swarm manager API is unavailable during cleanup."
+  nodes="$(docker node ls -q | wc -l | tr -d ' ')"
+  [[ "$nodes" == "1" ]] || die "SOCLab clean install may hard-reset only a dedicated one-node Swarm; found $nodes nodes."
+  return 0
+}
+
+remove_all_single_node_swarm_services() {
+  local deadline sid sname
+  local -a services=() tasks=()
+
+  validate_dedicated_single_node_swarm || return 0
+
+  if docker inspect shuffle-orborus >/dev/null 2>&1; then
+    log "Stopping Shuffle Orborus before Swarm reset"
+    docker stop shuffle-orborus >/dev/null 2>&1 || true
+  fi
+
+  mapfile -t services < <(docker service ls -q 2>/dev/null || true)
+  if (( ${#services[@]} )); then
+    log "Dedicated one-node Swarm detected; removing ALL ${#services[@]} Swarm service(s) before clean install"
+    for sid in "${services[@]}"; do
+      sname="$(docker service inspect -f '{{.Spec.Name}}' "$sid" 2>/dev/null || echo "$sid")"
+      log "Removing Swarm service $sname"
+      docker service rm "$sid" >/dev/null 2>&1 || true
+    done
+  fi
+
+  deadline=$((SECONDS + 120))
+  while (( SECONDS < deadline )); do
+    docker service ls -q 2>/dev/null | grep -q . || break
+    sleep 2
+  done
+  if docker service ls -q 2>/dev/null | grep -q .; then
+    warn "Residual Swarm services after removal attempt:"
+    docker service ls 2>/dev/null || true
+    die "Could not remove all services from the dedicated one-node Swarm."
+  fi
+
+  # Remove any orphaned task containers left by deleted services. This is what
+  # prevents frikky/shuffle-tools and other Shuffle app tasks from appearing to
+  # respawn during network cleanup.
+  mapfile -t tasks < <(docker ps -aq --filter 'label=com.docker.swarm.service.name' 2>/dev/null || true)
+  if (( ${#tasks[@]} )); then
+    log "Removing ${#tasks[@]} residual Swarm task container(s)"
+    docker rm -f -v "${tasks[@]}" >/dev/null 2>&1 || true
+  fi
+}
+
+leave_dedicated_single_node_swarm() {
+  local deadline state net
+  validate_dedicated_single_node_swarm || return 0
+
+  log "Leaving/resetting dedicated one-node Docker Swarm"
+  docker swarm leave --force >/dev/null 2>&1 || die "docker swarm leave --force failed on dedicated one-node Swarm."
+
+  deadline=$((SECONDS + 60))
+  while (( SECONDS < deadline )); do
+    state="$(docker info --format '{{.Swarm.LocalNodeState}}' 2>/dev/null || echo inactive)"
+    [[ "$state" != "active" ]] && break
+    sleep 2
+  done
+  state="$(docker info --format '{{.Swarm.LocalNodeState}}' 2>/dev/null || echo inactive)"
+  [[ "$state" != "active" ]] || die "Docker remained in Swarm mode after forced single-node leave."
+
+  # The daemon should remove swarm-scoped overlays when leaving. If a named
+  # SOCLab overlay remains locally, it no longer has a Swarm service reference
+  # and can now be removed deterministically.
+  for net in shuffle_shuffle "$SHUFFLE_SWARM_NETWORK_NAME"; do
+    docker network inspect "$net" >/dev/null 2>&1 || continue
+    log "Removing stale post-Swarm network $net"
+    docker network rm "$net" >/dev/null 2>&1 || true
+    docker network inspect "$net" >/dev/null 2>&1 && die "Network '$net' survived the dedicated Swarm reset."
+  done
+
+  ok "Dedicated one-node Swarm control plane reset; installer will initialize a fresh Swarm for Shuffle"
+}
+
 clean_lab() {
   phase "PHASE 1/7 - ERASE PREVIOUS SOC LAB"
+
+  # This lab intentionally owns its single-node Swarm. Remove the service
+  # objects first (not their task containers) so Docker cannot respawn
+  # shuffle-tools/app workers while Compose and overlays are being removed.
+  remove_all_single_node_swarm_services
+
   if [[ -f "$WAZUH_SINGLE/docker-compose.yml" ]]; then
     log "Stopping existing Wazuh Compose project"
     (cd "$WAZUH_SINGLE" && docker compose down -v --remove-orphans --timeout 20) || true
@@ -98,10 +189,21 @@ clean_lab() {
   remove_compose_project_resources "single-node"
   remove_compose_project_resources "shuffle"
   remove_historical_exact_wazuh_names
+
+  # Compose containers are gone, so it is now safe to destroy the old
+  # single-node Swarm metadata/overlay state. install_shuffle() later calls
+  # ensure_shuffle_swarm_prereqs() and creates a fresh manager + ingress +
+  # shuffle_swarm_executions overlay.
+  leave_dedicated_single_node_swarm
+
   if [[ -d "$ROOT_DIR" ]]; then log "Deleting $ROOT_DIR"; rm -rf --one-file-system "$ROOT_DIR"; fi
   if [[ -d /opt/soar-lab ]]; then log "Deleting legacy /opt/soar-lab"; rm -rf --one-file-system /opt/soar-lab; fi
   mkdir -p "$ROOT_DIR" "$STATE_DIR"
   if docker ps -aq --filter 'label=com.docker.compose.project=single-node' | grep -q .; then die "Residual 'single-node' Compose containers remain after cleanup."; fi
   if docker ps -aq --filter 'label=com.docker.compose.project=shuffle' | grep -q .; then die "Residual 'shuffle' Compose containers remain after cleanup."; fi
-  ok "Previous SOC lab state removed"
+  if docker service ls -q >/dev/null 2>&1; then
+    # docker service ls should no longer be available because Swarm was reset.
+    docker service ls -q 2>/dev/null | grep -q . && die "Residual Swarm services remain after cleanup."
+  fi
+  ok "Previous SOC lab state removed; old single-node Swarm state cleared"
 }
