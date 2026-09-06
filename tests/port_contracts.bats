@@ -25,8 +25,10 @@ setup() {
   [ "$status" -eq 0 ]
 }
 
-@test "Wazuh beta5 API uses the verified manager path and dashboard supported fields" {
+@test "Wazuh beta5 API uses the verified manager path and deterministic rewrite" {
   run grep -F '/var/wazuh-manager/api/configuration/api.yaml' "$WAZUH_API_OVERRIDE"
+  [ "$status" -eq 0 ]
+  run grep -F 'grep -Ev "^[[:space:]]*(host|port):"' "$WAZUH_API_OVERRIDE"
   [ "$status" -eq 0 ]
   run grep -F 'host: [\\\"0.0.0.0\\\", \\\"::\\\"]' "$WAZUH_API_OVERRIDE"
   [ "$status" -eq 0 ]
