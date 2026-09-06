@@ -12,11 +12,12 @@ collect_runtime_credentials() {
   ok "Installer configured to preserve stock/default credentials"
 }
 
-# Browser URLs are deterministic for this WSL2/Docker Desktop lab. Do not stop
-# the install for interactive URL confirmation.
+# Browser URLs are deterministic for this WSL2/Docker Desktop lab. User-facing
+# endpoints are HTTPS by default. Internal backend/worker control URLs may still
+# use HTTP when that is the upstream service protocol.
 collect_browser_urls() {
   WAZUH_DASHBOARD_BROWSER_URL="https://localhost:${WAZUH_DASHBOARD_PORT}"
-  SHUFFLE_BROWSER_URL="${SHUFFLE_DETECTED_URL:-http://localhost:${SHUFFLE_FRONTEND_PORT}}"
+  SHUFFLE_BROWSER_URL="${SHUFFLE_DETECTED_URL:-https://localhost:${SHUFFLE_HTTPS_PORT}}"
   ok "Browser URLs selected automatically: Wazuh=${WAZUH_DASHBOARD_BROWSER_URL}, Shuffle=${SHUFFLE_BROWSER_URL}"
 }
 
@@ -43,9 +44,10 @@ WAZUH_INDEXER_PASSWORD=${WAZUH_ADMIN_PASSWORD}
 WAZUH_DASHBOARD_SERVICE_USERNAME=${WAZUH_DASHBOARD_SERVICE_USER}
 WAZUH_DASHBOARD_SERVICE_PASSWORD=${WAZUH_DASHBOARD_SERVICE_PASSWORD}
 WAZUH_API_URL=https://localhost:${WAZUH_API_PORT}
+WAZUH_API_INTERNAL_URL=https://wazuh.manager:${WAZUH_API_INTERNAL_PORT}
 WAZUH_API_USERNAME=${WAZUH_API_USER}
 SHUFFLE_URL=${SHUFFLE_BROWSER_URL}
-SHUFFLE_API_URL=${SHUFFLE_API_BASE_URL:-${SHUFFLE_DETECTED_URL}}/api/v1
+SHUFFLE_API_URL=${SHUFFLE_API_BASE_URL:-http://localhost:${SHUFFLE_BACKEND_PORT}}/api/v1
 SHUFFLE_OPENSEARCH_URL=https://localhost:${SHUFFLE_OPENSEARCH_PORT}
 SHUFFLE_OPENSEARCH_USERNAME=admin
 EOF
