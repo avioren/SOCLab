@@ -44,7 +44,7 @@ setup() {
   [ "$status" -eq 0 ]
   run grep -F 'run_as: true' "$WAZUH_API_OVERRIDE"
   [ "$status" -eq 0 ]
-  run grep -F 'wazuh.manager:[0-9]+:55000' "$WAZUH_API_OVERRIDE"
+  run grep -F 'dashboard logs still show an invalid/default TCP/55000 manager API endpoint.' "$WAZUH_API_OVERRIDE"
   [ "$status" -eq 0 ]
   run grep -F 'configure_wazuh_api_runtime' "$INSTALL"
   [ "$status" -eq 0 ]
