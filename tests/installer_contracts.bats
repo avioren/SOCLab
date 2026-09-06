@@ -194,3 +194,15 @@ setup() {
   [ "$status" -eq 0 ]
   [[ "$output" == *'2>/dev/null'* ]]
 }
+
+@test "install teardown removes Compose endpoints before execution overlay" {
+  run awk '/^install_all\(\)/,/^}/ {print}' "$INSTALL"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *$'quiesce_shuffle_for_cleanup\n  clean_lab\n  cleanup_shuffle_swarm_runtime'* ]]
+}
+
+@test "reset uses the same dependency-safe teardown order" {
+  run awk '/^reset_cmd\(\)/,/^}/ {print}' "$INSTALL"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *$'quiesce_shuffle_for_cleanup\n  clean_lab\n  cleanup_shuffle_swarm_runtime'* ]]
+}
