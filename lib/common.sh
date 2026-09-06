@@ -166,10 +166,15 @@ remove_tenzir_runtime() {
       docker network rm tenzir-network >/dev/null 2>&1 || true
       sleep 1
     done
-    docker network inspect tenzir-network >/dev/null 2>&1 && die "Could not remove SOCLab Tenzir network 'tenzir-network'."
+    if docker network inspect tenzir-network >/dev/null 2>&1; then
+      die "Could not remove SOCLab Tenzir network 'tenzir-network'."
+    fi
   fi
 
-  docker inspect tenzir-node >/dev/null 2>&1 && die "Residual Tenzir runtime container remains after cleanup."
+  if docker inspect tenzir-node >/dev/null 2>&1; then
+    die "Residual Tenzir runtime container remains after cleanup."
+  fi
+  return 0
 }
 
 leave_dedicated_single_node_swarm() {
