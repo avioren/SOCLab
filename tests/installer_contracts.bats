@@ -187,10 +187,10 @@ setup() {
 }
 
 @test "Shuffle startup readiness probes suppress expected transient curl transport noise" {
-  run grep -F 'soclab-shuffle-checkusers.out' "$SHUFFLE"
+  run grep -A1 -F 'soclab-shuffle-checkusers.out' "$SHUFFLE"
   [ "$status" -eq 0 ]
   [[ "$output" == *'2>/dev/null'* ]]
-  run grep -F 'soclab-shuffle-os.out' "$SHUFFLE"
+  run grep -A1 -F 'soclab-shuffle-os.out' "$SHUFFLE"
   [ "$status" -eq 0 ]
   [[ "$output" == *'2>/dev/null'* ]]
 }
