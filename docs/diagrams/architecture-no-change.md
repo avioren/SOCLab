@@ -10,24 +10,18 @@ This is necessary because deleting a Swarm task container does not delete its ow
 
 The destructive reset is refused if the existing Swarm has more than one node or the local Docker engine is not the manager. No global Docker system/image/volume prune is used.
 
-## Wazuh 5.0.0-beta5 API configuration path correction
+## Wazuh API configuration path correction
 
-The Wazuh API remains configured on TCP/15500 and the SOCLab port topology is unchanged.
+The Wazuh API remains configured on TCP/15500 and the SOCLab port topology is unchanged. For the pinned Wazuh 5.0.0-beta5 manager image, runtime verification on the lab confirmed the active API configuration file is `/var/wazuh-manager/api/configuration/api.yaml` and that the API honors a custom listener on TCP/15500.
 
-For the pinned `wazuh/wazuh-manager:5.0.0-beta5` image, the actual API configuration file is:
-
-`/var/wazuh-manager/api/configuration/api.yaml`
-
-This was verified directly against the beta5 image and then validated at runtime: after adding active API host/port settings, the manager served the API on TCP/15500 and no longer served it on TCP/55000. The `/var/ossec/api/configuration/api.yaml` path belongs to older/current Wazuh layouts and is not valid for this beta5 image.
-
-SOCLab explicitly configures:
+The beta5 `api.yaml` is shipped mostly commented. SOCLab therefore preserves the vendor file and comments, removes only any already-active top-level `host:` or `port:` entries, then appends one authoritative pair:
 
 ```yaml
-host: ['0.0.0.0', '::']
+host: ["0.0.0.0", "::"]
 port: 15500
 ```
 
-The beta5 `api.yaml` is mostly commented by default. The installer therefore replaces a matching active or commented `host`/`port` setting when one exists, and otherwise appends an active setting. It then verifies both values before continuing.
+JSON-style quoted lists are valid YAML and avoid fragile nested shell quoting inside the temporary `docker compose run ... sh -lc` configuration step.
 
 The Docker Compose publication is host TCP/15500 to container TCP/15500. It is not a host-port translation to the upstream default TCP/55000.
 
@@ -35,9 +29,9 @@ The dashboard's Wazuh plugin manager/API endpoint belongs at `/usr/share/wazuh-d
 
 The pinned Wazuh 5.0.0-beta5 Docker repository does not provide `single-node/config/wazuh_dashboard/wazuh.yml`, so SOCLab generates a minimal plugin configuration using Wazuh's supported `hosts -> default -> url/port/username/password/run_as` schema. It targets `https://wazuh.manager` on TCP/15500 with the beta5 default `wazuh-wui` credentials, applies the detected dashboard UID/GID ownership, and bind-mounts the generated file read-only into the plugin runtime path.
 
-Wazuh Docker also initializes the dashboard API host from the `WAZUH_API_URL` environment variable. That variable is a host/base URL, not a host-plus-port field. SOCLab therefore keeps it at `WAZUH_API_URL=https://wazuh.manager` and stores the non-default API port only in `wazuh.yml`. Supplying `https://wazuh.manager:15500` in the environment can cause the image initializer to append its own default port and produce a malformed endpoint such as `https://wazuh.manager:15500:55000`.
+Wazuh Docker also initializes the dashboard API host from the `WAZUH_API_URL` environment variable. That variable is a host/base URL, not a host-plus-port field. SOCLab therefore keeps it at `WAZUH_API_URL=https://wazuh.manager` and stores the non-default API port only in `wazuh.yml`.
 
-Runtime verification checks `/var/wazuh-manager/api/configuration/api.yaml` for the expected host and TCP/15500 listener configuration, the host-only dashboard environment value, the read-only `wazuh.yml` mount, `port: 15500` in the live plugin configuration, dashboard-to-manager connectivity on TCP/15500, and absence of fallback/malformed TCP/55000 manager URLs in recent dashboard logs.
+Runtime verification checks `/var/wazuh-manager/api/configuration/api.yaml` for the expected host and TCP/15500 listener, the host-only dashboard environment value, the read-only `wazuh.yml` mount, `port: 15500` in the live plugin configuration, dashboard-to-manager connectivity on TCP/15500, and absence of fallback/malformed TCP/55000 manager URLs in recent dashboard logs.
 
 `opensearch_dashboards.yml` remains responsible for the dashboard/OpenSearch server configuration and is not used as the Wazuh manager API endpoint configuration.
 
