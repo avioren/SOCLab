@@ -74,6 +74,8 @@ install_all() {
   # Validate external release artifacts before destroying the working lab.
   preflight_shuffle_release
 
+  # Stop/remove the previous Shuffle execution plane before generic Compose cleanup.
+  cleanup_shuffle_swarm_runtime
   clean_lab
 
   phase "HOST PREPARATION"
