@@ -11,7 +11,7 @@ setup() {
 }
 
 @test "Wazuh compose patch keeps container 1514 but remaps the host port" {
-  run grep -F 'rf'"'"'\\1"{agent_port}:1514"'"' "$WAZUH"
+  run grep -F '{agent_port}:1514' "$WAZUH"
   [ "$status" -eq 0 ]
   run grep -F 'Wazuh still publishes host TCP/1514; this would conflict with Shuffle/Tenzir.' "$WAZUH"
   [ "$status" -eq 0 ]
