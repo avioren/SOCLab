@@ -73,6 +73,19 @@ source "$SCRIPT_DIR/lib/shuffle.sh"
 # shellcheck source=lib/healthcheck.sh
 source "$SCRIPT_DIR/lib/healthcheck.sh"
 
+# Override the library reset entrypoint so install and reset share exactly the
+# same dependency-safe teardown order. The upstream Shuffle tree is never
+# edited; this only orchestrates SOCLab-owned resources.
+reset_cmd() {
+  need_root
+  check_docker
+  phase "RESET SOC LAB"
+  quiesce_shuffle_for_cleanup
+  clean_lab
+  cleanup_shuffle_swarm_runtime
+  ok "SOCLab reset complete; Docker Swarm mode itself was intentionally left unchanged"
+}
+
 install_all() {
   need_root
   check_docker
