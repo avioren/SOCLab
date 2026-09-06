@@ -54,8 +54,10 @@ setup() {
   [ "$status" -eq 0 ]
 }
 
-@test "Shuffle uses v3 generated local bootstrap values" {
-  run grep -F 'shuffle_pw="$(openssl rand -base64 40' "$SHUFFLE"
+@test "Shuffle bootstrap values are generated locally and OpenSearch password is strong" {
+  run grep -F 'generate_shuffle_opensearch_password' "$SHUFFLE"
+  [ "$status" -eq 0 ]
+  run grep -F 'secrets.SystemRandom().shuffle(chars)' "$SHUFFLE"
   [ "$status" -eq 0 ]
   run grep -F 'SHUFFLE_DEFAULT_USERNAME" "admin@soclab.local"' "$SHUFFLE"
   [ "$status" -eq 0 ]
@@ -65,11 +67,23 @@ setup() {
   [ "$status" -eq 0 ]
   run grep -F 'SHUFFLE_UI_PASSWORD=${shuffle_pw}' "$SHUFFLE"
   [ "$status" -eq 0 ]
-  run grep -F 'SHUFFLE_UPSTREAM_UI_DEFAULT_ACCOUNT=none' "$SHUFFLE"
+}
+
+@test "Shuffle secrets are never rendered by compose validation" {
+  run grep -F 'docker compose config --quiet' "$SHUFFLE"
+  [ "$status" -eq 0 ]
+  run grep -E 'docker compose config[[:space:]]*>' "$SHUFFLE"
+  [ "$status" -ne 0 ]
+}
+
+@test "healthcheck checks authenticated Shuffle datastore when local inventory exists" {
+  run grep -F 'SHUFFLE_OPENSEARCH_PASSWORD' "$HEALTH"
+  [ "$status" -eq 0 ]
+  run grep -F 'verify_shuffle_opensearch' "$HEALTH"
   [ "$status" -eq 0 ]
 }
 
-@test "healthcheck treats credentials as optional and still checks listeners" {
+@test "healthcheck still checks Wazuh listeners" {
   run grep -F 'dashboard-https' "$HEALTH"
   [ "$status" -eq 0 ]
   run grep -F 'wazuh-api' "$HEALTH"
