@@ -19,7 +19,9 @@ The installer configures the required Linux kernel settings, including `vm.max_m
 
 ### Swarm assumptions
 
-The SOCLab profile intentionally uses exactly one Swarm node. If Docker Swarm is inactive, the installer initializes it. If the Docker daemon is already part of a multi-node Swarm, the installer refuses to continue rather than modifying an unrelated cluster.
+The SOCLab profile intentionally uses exactly one dedicated Swarm node. A clean install treats the existing one-node Swarm as disposable lab state: it removes all existing Swarm service objects, tears down the old lab, leaves the old Swarm with `docker swarm leave --force`, and later initializes a fresh one-node Swarm for Shuffle.
+
+The destructive Swarm reset is allowed only when this Docker engine is the active manager and the Swarm contains exactly one node. If Docker is already part of a multi-node Swarm, the installer refuses to continue rather than modifying that cluster.
 
 For a one-node Docker Desktop deployment no inter-host Swarm firewall opening is required. If this design is later expanded to multiple physical/VM nodes, Docker/Shuffle Swarm ports must be allowed only between those nodes (manager TCP 2377, node discovery TCP/UDP 7946, and overlay VXLAN UDP 4789).
 
@@ -46,16 +48,23 @@ Before destructive cleanup, the installer verifies the pinned Shuffle source tag
 
 The clean install then performs these high-level stages:
 
-1. Reconcile/remove SOCLab-owned Shuffle execution services and the dedicated execution overlay from any previous run.
-2. Remove the previous SOCLab Compose/runtime state.
-3. Apply host prerequisites and kernel settings.
-4. Clone, prepare, start, and health-check Wazuh `5.0.0-beta5`.
-5. Initialize/validate the one-node Docker Swarm and its ingress network.
-6. Create/validate the attachable `shuffle_swarm_executions` overlay.
-7. Clone pinned Shuffle `v2.2.1`, pin matching frontend/backend/Orborus/worker images, and adapt its networking for the single-node Swarm profile.
-8. Start and validate Shuffle OpenSearch, Backend, Frontend, Orborus, and the Swarm worker execution plane.
-9. Write the local credential inventory only after the Shuffle control, data, and execution health gates succeed.
-10. Run the final combined Wazuh + Shuffle healthcheck.
+1. Verify that any active Swarm is the dedicated one-node SOCLab manager.
+2. Stop Orborus and remove **all Swarm services**, preventing Docker from respawning Shuffle task containers such as `frikky/shuffle-tools`.
+3. Wait for service removal and delete residual Swarm task containers.
+4. Tear down the previous Wazuh/Shuffle Compose projects and local runtime state.
+5. Leave the old one-node Swarm with `docker swarm leave --force` and verify stale SOCLab overlays are gone.
+6. Apply host prerequisites and kernel settings.
+7. Clone, prepare, start, and health-check Wazuh `5.0.0-beta5`.
+8. Initialize/validate a fresh one-node Docker Swarm and its ingress network.
+9. Create/validate the attachable `shuffle_swarm_executions` overlay.
+10. Clone pinned Shuffle `v2.2.1`, pin matching frontend/backend/Orborus/worker images, and adapt its networking for the single-node Swarm profile.
+11. Start and validate Shuffle OpenSearch, Backend, Frontend, Orborus, and the Swarm worker execution plane.
+12. Write the local credential inventory only after the Shuffle control, data, and execution health gates succeed.
+13. Run the final combined Wazuh + Shuffle healthcheck.
+
+## Why Shuffle task containers may appear to respawn
+
+In Swarm mode, a container is a task owned by a Swarm service. Deleting or killing the task container does not delete the service. The Swarm manager continuously reconciles desired state and creates a replacement task. Therefore the SOCLab clean installer removes the owning Swarm service objects first; it does not attempt to clean dynamic Shuffle app containers one by one.
 
 ## Shuffle component contract
 
@@ -129,4 +138,4 @@ The runtime `.env`, generated credentials, certificates, and private keys are lo
 sudo ./install.sh reset
 ```
 
-Reset removes SOCLab-owned Wazuh/Shuffle runtime resources, the `shuffle-workers` service, temporary Shuffle services attached to the SOCLab execution network, and the SOCLab execution overlay. It deliberately leaves the Docker daemon in Swarm mode so it does not mutate global Docker state outside the lab's ownership boundary.
+Reset uses the same deterministic teardown policy as clean install: on a validated dedicated one-node Swarm it removes all Swarm services, tears down the SOCLab Compose resources, and leaves the old Swarm control plane. It refuses to perform this destructive reset on a multi-node Swarm. The next `install` initializes a fresh one-node Swarm for Shuffle.
