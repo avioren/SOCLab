@@ -48,6 +48,7 @@ architecture_impact:
 generate_diagrams:
   image: docker:27-cli
   stage: docs
+  needs: []
   services:
     - name: docker:27-dind
   variables:
