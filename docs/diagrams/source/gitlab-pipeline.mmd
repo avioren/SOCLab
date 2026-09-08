@@ -1,0 +1,13 @@
+flowchart LR
+  Dev["Code / rules / docs change"] --> Git["GitLab repository"]
+  Git --> Secret["Secret safety scan"]
+  Secret --> Lint["Bash syntax + ShellCheck"]
+  Lint --> Tests["Bats regression tests"]
+  Tests --> Arch["Architecture-impact check"]
+  Arch --> Docs["MkDocs validation / Pages"]
+  Git --> Manual["Manual: generate_diagrams"]
+  Manual --> Render["Beautiful Mermaid 1.1.3"]
+  Render --> SVG["SVG artifacts"]
+  Git --> Local["Lab machine"]
+  Local --> Verify["./install.sh verify"]
+  Verify --> Runtime["Real Wazuh + Shuffle verification"]

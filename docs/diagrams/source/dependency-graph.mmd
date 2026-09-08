@@ -1,0 +1,14 @@
+flowchart TB
+  Repo["GitLab source of truth"] --> Installer["install.sh + lib/"]
+  Repo --> Tests["tests/ + fixtures/"]
+  Repo --> Docs["docs/ + architecture"]
+  Installer --> Wazuh["Wazuh runtime"]
+  Installer --> Shuffle["Shuffle runtime"]
+  Wazuh --> Ports["Port contract"]
+  Shuffle --> Ports
+  Ports --> Health["Health / integration verification"]
+  Tests --> Installer
+  Tests --> Ports
+  Docs --> Impact["Architecture-impact policy"]
+  Installer --> Impact
+  Impact --> Review["Review code + architecture together"]

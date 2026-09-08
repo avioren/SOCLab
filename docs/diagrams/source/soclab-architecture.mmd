@@ -1,0 +1,12 @@
+flowchart TB
+  Telemetry["Endpoints / test telemetry"] --> Manager["Wazuh Manager"]
+  Manager --> Indexer["Wazuh Indexer<br/>OpenSearch · host 9200"]
+  Indexer --> Dashboard["Wazuh Dashboard<br/>8443 → 5601"]
+  Manager --> API["Wazuh API<br/>127.0.0.1:15500"]
+  Manager --> Alert["Alert / integration"]
+  Alert --> Backend["Shuffle Backend"]
+  Backend --> ShuffleOS["Shuffle OpenSearch<br/>127.0.0.1:9201"]
+  Backend --> Orborus["Orborus"]
+  Orborus --> Worker["shuffle-workers<br/>1 replica"]
+  Worker --> Apps["Temporary app services"]
+  Apps --> Response["Enrichment / response"]

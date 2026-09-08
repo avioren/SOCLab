@@ -1,0 +1,9 @@
+flowchart LR
+  Laptop["Old laptop<br/>8th-gen Intel i7 · 64 GB RAM"] --> Win["Windows 11 Lite"]
+  Win --> WSL["WSL2"]
+  WSL --> Ubuntu["Ubuntu 26.04"]
+  Ubuntu --> Docker["Docker Desktop / Linux daemon"]
+  Docker --> Wazuh["Wazuh 5.0.0-beta5"]
+  Docker --> Shuffle["Shuffle 2.2.1"]
+  Wazuh --> Lab["SOCLab"]
+  Shuffle --> Lab

@@ -1,0 +1,13 @@
+flowchart LR
+  E["Endpoint / telemetry"] --> W["Wazuh Manager"]
+  W --> D["Detection / rule"]
+  D --> A["Alert"]
+  A --> S["Shuffle Backend"]
+  S --> O["Orborus"]
+  O --> K["Worker"]
+  K --> X["Enrichment"]
+  X --> Q{"Decision"}
+  Q -->|Respond| R["Response action"]
+  Q -->|Observe| C["Case / context"]
+  R --> F["Feedback into detection engineering"]
+  C --> F

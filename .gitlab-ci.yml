@@ -45,6 +45,25 @@ architecture_impact:
   script:
     - bash scripts/check-architecture-impact.sh
 
+generate_diagrams:
+  image: docker:27-cli
+  stage: docs
+  services:
+    - name: docker:27-dind
+  variables:
+    DOCKER_HOST: tcp://docker:2375
+    DOCKER_TLS_CERTDIR: ""
+  rules:
+    - when: manual
+      allow_failure: true
+  script:
+    - ./scripts/generate-diagrams.sh
+  artifacts:
+    name: "soclab-diagrams-$CI_COMMIT_SHORT_SHA"
+    paths:
+      - docs/diagrams/generated/*.svg
+    expire_in: 30 days
+
 mkdocs_check:
   image: python:3.13-slim
   stage: docs
