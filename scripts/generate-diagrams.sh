@@ -15,8 +15,11 @@ esac
 
 command -v docker >/dev/null 2>&1 || { echo "[FAIL] Docker is required" >&2; exit 1; }
 docker info >/dev/null 2>&1 || { echo "[FAIL] Docker daemon is not reachable" >&2; exit 1; }
-mapfile -t sources < <(find "$SOURCE_DIR" -maxdepth 1 -type f -name '*.mmd' -printf '%f\n' | sort)
-(( ${#sources[@]} > 0 )) || { echo "[FAIL] No .mmd diagram sources found" >&2; exit 1; }
+
+shopt -s nullglob
+source_paths=("$SOURCE_DIR"/*.mmd)
+(( ${#source_paths[@]} > 0 )) || { echo "[FAIL] No .mmd diagram sources found" >&2; exit 1; }
+mapfile -t sources < <(printf '%s\n' "${source_paths[@]##*/}" | sort)
 
 echo "[OK] Docker reachable"
 echo "[INFO] Building Beautiful Mermaid 1.1.3 renderer"
