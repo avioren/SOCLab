@@ -1,0 +1,13 @@
+flowchart LR
+  Change[Code / Config Change] --> MR[GitLab Merge Request]
+  MR --> Secret[Secret Scan]
+  Secret --> Lint[ShellCheck / Syntax]
+  Lint --> Tests[BATS Tests]
+  Tests --> Gate[Architecture Impact Gate]
+  Gate --> Mermaid[Mermaid Source Update]
+  Mermaid --> Render[Beautiful Mermaid Renderer]
+  Render --> SVG[Generated SVG Artifacts]
+  SVG --> MkDocs[MkDocs Strict Build]
+  MkDocs --> Pages[GitLab Pages Documentation]
+  Gate -->|No architecture impact| Decision[architecture-no-change.md]
+  Decision --> MkDocs

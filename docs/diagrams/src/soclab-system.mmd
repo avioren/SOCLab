@@ -1,0 +1,11 @@
+flowchart LR
+  Endpoint[Windows / Linux Endpoints] -->|Agent telemetry| Wazuh[Wazuh Manager]
+  Wazuh -->|Indexed alerts| Indexer[Wazuh Indexer]
+  Indexer --> Dashboard[Wazuh Dashboard]
+  Wazuh -->|Alert / integration event| Shuffle[Shuffle SOAR]
+  Syslog[Network / Syslog Sources] --> Tenzir[Tenzir Pipeline]
+  Tenzir --> Shuffle
+  Shuffle -->|Enrichment / response| Actions[Response Actions]
+  Shuffle -->|Search / workflow state| OpenSearch[Shuffle OpenSearch]
+  GitLab[GitLab - Detection & Config as Code] -->|CI validated changes| Wazuh
+  GitLab -->|Workflow / integration definitions| Shuffle

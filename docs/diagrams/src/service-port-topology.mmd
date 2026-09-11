@@ -1,0 +1,13 @@
+flowchart LR
+  Host[SOCLab Host] --> WSys[Wazuh Syslog UDP 514]
+  Host --> TSys[Tenzir / Shuffle Syslog TCP 1514]
+  Host --> WEnroll[Wazuh Enrollment TCP 1515]
+  Host --> WAgent[Wazuh Agent Events TCP 15140]
+  Host --> SHTTP[Shuffle HTTP TCP 3001]
+  Host --> SHTTPS[Shuffle HTTPS TCP 3443]
+  Host --> SAPI[Shuffle API TCP 5001]
+  Host --> TAPI[Tenzir API TCP 5160]
+  Host --> WDash[Wazuh Dashboard TCP 8443]
+  Host --> WIndex[Wazuh Indexer TCP 9200]
+  Host --> SIndex[Shuffle OpenSearch 127.0.0.1:9201]
+  Host --> WAPI[Wazuh API 127.0.0.1:15500]

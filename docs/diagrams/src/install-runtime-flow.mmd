@@ -1,0 +1,14 @@
+flowchart TD
+  Start[install.sh] --> Preflight[Environment & prerequisite checks]
+  Preflight --> Ports[Validate host-port ownership contract]
+  Ports --> Secrets[Generate / validate runtime credentials]
+  Secrets --> Wazuh[Deploy Wazuh single-node stack]
+  Wazuh --> API[Configure Wazuh API on TCP 15500]
+  API --> Shuffle[Deploy Shuffle single-node execution plane]
+  Shuffle --> Swarm[Initialize / validate Docker Swarm]
+  Swarm --> Health[Run cross-service health checks]
+  Health --> Ready{Healthy?}
+  Ready -->|Yes| Done[SOCLab ready]
+  Ready -->|No| Diagnose[Print diagnostics and fail safely]
+  Diagnose --> Fix[Correct config / port / service issue]
+  Fix --> Health

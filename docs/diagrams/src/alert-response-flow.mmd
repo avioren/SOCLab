@@ -1,0 +1,14 @@
+flowchart LR
+  Source[Endpoint / Network Event] --> Detect[Wazuh Detection Rule]
+  Detect --> Alert[Normalized Security Alert]
+  Alert --> Route{SOAR trigger?}
+  Route -->|No| Analyst[Dashboard / Analyst Review]
+  Route -->|Yes| Shuffle[Shuffle Workflow]
+  Shuffle --> Enrich[Enrichment & Context]
+  Enrich --> Decide{Response policy}
+  Decide -->|Observe| Ticket[Case / Notification]
+  Decide -->|Contain| Action[Approved Response Action]
+  Action --> Verify[Verify outcome]
+  Ticket --> Close[Close / Tune Detection]
+  Verify --> Close
+  Close --> GitLab[Version rule / workflow change in GitLab]
