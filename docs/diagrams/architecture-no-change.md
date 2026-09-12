@@ -60,3 +60,9 @@ The reusable `./install.sh healthcheck` command now runs the Wazuh API runtime v
 This does not change the Wazuh or Shuffle architecture, port contract, TLS model, certificates, Docker networks, service dependencies, or install-time hard gates. The verifier itself still uses the same runtime checks and remains strict when called directly or from final install validation.
 
 The change only prevents the verifier's `die`/`exit` path from terminating the reusable healthcheck before the operator can see the complete component table. A Wazuh API config mismatch is therefore reported as `FAIL wazuh-api-config` while all other Wazuh, Shuffle, OpenSearch, Orborus, and worker checks continue to be evaluated.
+
+## Public source-repository hardening
+
+The public-release controls change repository governance, secret scanning, and CI trust boundaries only. They do not alter the SOCLab component topology, Docker networks, service ports, data flows, or runtime deployment model.
+
+The running lab remains private. Only a sanitized source snapshot is eligible for publication, while GitLab Pages, CI logs and artifacts, environments, registries, and security reports remain restricted to trusted project members.
