@@ -1,9 +1,19 @@
 # Secrets and local environment
 .env
 .env.*
+.envrc
 *.key
 *.pem
+*.p12
+*.pfx
+*.jks
 credentials.txt
+kubeconfig*
+.npmrc
+.pypirc
+.netrc
+id_rsa
+id_ed25519
 secrets/
 
 # Runtime / logs

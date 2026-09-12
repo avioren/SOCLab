@@ -1,3 +1,14 @@
+include:
+  - template: Jobs/Secret-Detection.gitlab-ci.yml
+
+workflow:
+  rules:
+    # Defense in depth. The project setting also forbids parent-project
+    # pipelines for fork merge requests.
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_SOURCE_PROJECT_ID != $CI_PROJECT_ID'
+      when: never
+    - when: always
+
 stages:
   - security
   - lint
@@ -12,6 +23,10 @@ secret_scan:
     - apk add --no-cache bash grep findutils
   script:
     - ./scripts/check-secrets.sh
+
+# GitLab-maintained analyzer complements the repository-specific scanner above.
+secret_detection:
+  stage: security
 
 .default_debian:
   image: debian:bookworm-slim
