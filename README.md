@@ -26,6 +26,14 @@ install.sh credentials
 
 Documentation is under `docs/` and is built by GitLab CI with MkDocs. See `docs/gitlab.md` for repository setup and authentication guidance.
 
+## Product portfolio
+
+SOCLab is also maintained as a **Technical Product Management portfolio project**. The product system of record is under [`docs/product/`](docs/product/README.md) and contains the vision, personas/JTBD, user journey, PRD, backlog, roadmap, success metrics, decisions, risks, AI governance, demo runbook, and evidence matrix.
+
+**Portfolio rule:** no capability is labeled *Implemented* without repository/runtime evidence. The current repository strongly proves the runtime platform — reproducible install/reset, health gates, API/port/network contracts, CI safety/regression tests, architecture governance and recovery. A committed end-to-end security-event path from known signal → Wazuh detection → Shuffle workflow → final evidence is the next product milestone.
+
+Start with: [`docs/product/EVIDENCE_MATRIX.md`](docs/product/EVIDENCE_MATRIX.md).
+
 ## CI model
 
 Normal CI runs only on GitLab-hosted runners:
