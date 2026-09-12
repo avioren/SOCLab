@@ -60,3 +60,11 @@ The reusable `./install.sh healthcheck` command now runs the Wazuh API runtime v
 This does not change the Wazuh or Shuffle architecture, port contract, TLS model, certificates, Docker networks, service dependencies, or install-time hard gates. The verifier itself still uses the same runtime checks and remains strict when called directly or from final install validation.
 
 The change only prevents the verifier's `die`/`exit` path from terminating the reusable healthcheck before the operator can see the complete component table. A Wazuh API config mismatch is therefore reported as `FAIL wazuh-api-config` while all other Wazuh, Shuffle, OpenSearch, Orborus, and worker checks continue to be evaluated.
+
+## Product portfolio documentation layer
+
+The `product-portfolio-evidence` change adds product-management documentation under `docs/product/`, links it from the root `README.md`, and exposes it through MkDocs navigation.
+
+This does **not** change runtime architecture, service topology, Docker/Swarm networks, ports, Wazuh/Shuffle configuration, health gates, installer behavior, or integration implementation. It adds a product system of record and an evidence matrix that describes the existing architecture more explicitly.
+
+The documentation also records an intentional product gap: the repository does not yet contain committed proof of a canonical security-event journey from a known signal through Wazuh detection into a Shuffle workflow and final response evidence. Recording that gap does not alter the implemented architecture.
