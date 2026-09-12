@@ -1,7 +1,21 @@
 site_name: SOC Lab - Wazuh 5 beta5 + Shuffle
-site_description: Reproducible WSL2 SOC/SOAR lab with health checks and GitLab CI
+site_description: Reproducible WSL2 SOC/SOAR lab with health checks, GitLab CI, and a Technical Product Management portfolio
 nav:
   - Home: index.md
+  - Product Portfolio:
+      - Overview: product/README.md
+      - Product Vision: product/PRODUCT_VISION.md
+      - Personas & JTBD: product/PERSONAS_JTBD.md
+      - User Journey: product/USER_JOURNEY.md
+      - PRD: product/PRD.md
+      - Backlog: product/BACKLOG.md
+      - Roadmap: product/ROADMAP.md
+      - Success Metrics: product/SUCCESS_METRICS.md
+      - Decision Log: product/DECISION_LOG.md
+      - Risk Register: product/RISK_REGISTER.md
+      - AI Governance: product/AI_GOVERNANCE.md
+      - Demo Runbook: product/DEMO_RUNBOOK.md
+      - Evidence Matrix: product/EVIDENCE_MATRIX.md
   - Installation: installation.md
   - Operations & Healthcheck: operations.md
   - Architecture: architecture.md
