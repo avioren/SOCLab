@@ -17,13 +17,14 @@ npm run diagrams:render
 
 CI publishes the generated SVG directory as a job artifact and regenerates diagrams before MkDocs validation and GitLab Pages publication.
 
-## Product-story sources
+## Product and platform story sources
 
 - `product-story.mmd` — users, friction, product response, evidence, and intended outcome.
 - `analyst-journey.mmd` — the signal-to-action journey with an explicit distinction between implemented runtime evidence and the still-unproven end-to-end SOC scenario.
 - `product-evolution.mmd` — product progression from reliability through evidence, observability, AI assistance, and governed autonomy.
+- `runtime-platform.mmd` — the physical/runtime hosting model: Windows 11, WSL2 Ubuntu, Docker Desktop WSL2 integration, Wazuh Compose, and Shuffle's one-node Swarm execution plane.
 
-The GitHub-facing narrative is in `docs/product-story.md`, where the same product concepts are presented as GitHub-native Mermaid diagrams.
+The GitHub-facing narrative is in `docs/product-story.md`, while the repository README exposes the runtime platform directly for visitors evaluating how the lab is actually hosted.
 
 ## Versioning contract
 

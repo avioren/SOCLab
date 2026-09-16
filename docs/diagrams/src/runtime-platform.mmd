@@ -1,0 +1,10 @@
+flowchart LR
+  Windows[Windows 11 workstation] --> WSL[WSL2]
+  Windows --> Desktop[Docker Desktop]
+  WSL --> Ubuntu[Ubuntu distro - SOCLab operator environment]
+  Desktop --> Backend[Docker Desktop WSL2 backend and Linux daemon]
+  Ubuntu -->|Docker CLI / Compose / Swarm API| Backend
+  Backend --> Wazuh[Wazuh single-node Docker Compose]
+  Backend --> Shuffle[Shuffle core containers]
+  Backend --> Swarm[One-node Docker Swarm execution plane]
+  Swarm --> Workers[Shuffle workers and temporary app services]
