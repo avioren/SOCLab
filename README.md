@@ -1,6 +1,6 @@
 # SOC Lab: Wazuh 5.0.0-beta5 + Shuffle
 
-GitLab-ready automation project for a reproducible WSL2 SOC/SOAR lab.
+GitLab-ready automation project for a reproducible SOC/SOAR lab running on a **Windows 11 workstation with WSL2 Ubuntu and Docker Desktop using WSL2 integration**.
 
 ## Product story
 
@@ -18,6 +18,25 @@ flowchart LR
 ```
 
 See [SOCLab Product Story](docs/product-story.md) for the user journey, current evidence boundary, and product evolution roadmap.
+
+## Runtime platform
+
+The lab is intentionally built as a practical workstation-hosted environment rather than an abstract cloud reference architecture. **Windows 11 is the physical host, Ubuntu runs under WSL2, and Docker Desktop provides the Linux container runtime through its WSL2 backend/integration.** Wazuh runs as a single-node Docker Compose stack, while Shuffle uses the same Docker Desktop daemon and a one-node Docker Swarm execution plane.
+
+```mermaid
+flowchart LR
+  Windows[Windows 11 workstation] --> WSL[WSL2]
+  Windows --> Desktop[Docker Desktop]
+  WSL --> Ubuntu[Ubuntu distro - SOCLab operator environment]
+  Desktop --> Backend[Docker Desktop WSL2 backend and Linux daemon]
+  Ubuntu -->|Docker CLI / Compose / Swarm API| Backend
+  Backend --> Wazuh[Wazuh single-node Docker Compose]
+  Backend --> Shuffle[Shuffle core containers]
+  Backend --> Swarm[One-node Docker Swarm execution plane]
+  Swarm --> Workers[Shuffle workers and temporary app services]
+```
+
+See [Architecture](docs/architecture.md) for the detailed runtime, network, datastore, and ownership boundaries.
 
 ## Quick start
 
