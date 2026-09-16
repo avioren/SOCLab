@@ -38,6 +38,12 @@ flowchart LR
 
 See [Architecture](docs/architecture.md) for the detailed runtime, network, datastore, and ownership boundaries.
 
+## Deploy on another Windows 11 host
+
+SOCLab is designed to be reproduced from Git on another Windows 11 + WSL2 + Docker Desktop workstation. See **[Deploy SOCLab on Another Windows 11 Host](docs/deploy-another-host.md)** for the complete clone/import, Docker Desktop, WSL2, installation, and verification procedure.
+
+> **GitLab access is not portable credentials.** If you import or develop SOCLab in GitLab, configure **your own GitLab account, repository, permissions, SSH key/OAuth session/access token, and CI/CD secrets**. Never reuse or request the original author's credentials. Runtime credentials are generated independently on each host and must never be committed.
+
 ## Quick start
 
 ```bash
