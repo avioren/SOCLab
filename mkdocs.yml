@@ -4,6 +4,7 @@ nav:
   - Home: index.md
   - Product Story: product-story.md
   - Installation: installation.md
+  - Deploy on Another Host: deploy-another-host.md
   - Operations & Healthcheck: operations.md
   - Architecture: architecture.md
   - Testing & CI: testing.md

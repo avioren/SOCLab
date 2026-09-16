@@ -66,3 +66,21 @@ The change only prevents the verifier's `die`/`exit` path from terminating the r
 The public-release controls change repository governance, secret scanning, and CI trust boundaries only. They do not alter the SOCLab component topology, Docker networks, service ports, data flows, or runtime deployment model.
 
 The running lab remains private. Only a sanitized source snapshot is eligible for publication, while GitLab Pages, CI logs and artifacts, environments, registries, and security reports remain restricted to trusted project members.
+
+## Portable host deployment documentation
+
+The portable deployment guide documents how to reproduce the existing SOCLab architecture on another supported workstation. It does not introduce a new runtime topology or service boundary.
+
+The reproduced host uses the same architecture already defined by the project:
+
+```text
+Windows 11
+  -> WSL2 Ubuntu
+  -> Docker Desktop WSL2 backend / Linux daemon
+  -> Wazuh single-node Docker Compose
+  -> Shuffle core containers + dedicated one-node Docker Swarm execution plane
+```
+
+The guide adds repository/bootstrap instructions only: clone the public GitHub upstream, optionally import it into a user-controlled GitLab project, authenticate GitLab with that user's own account/SSH/OAuth/token credentials, run the existing installer, and execute the existing health gates.
+
+GitLab identity, repository permissions, SSH private keys, OAuth sessions, access tokens, CI/CD secrets, runtime passwords, generated certificates, and `/opt/soclab` state remain host/account-specific and are not part of the portable architecture. The deployment process creates a new trusted runtime context on each host while preserving the existing component, network, datastore, and Swarm model.
