@@ -2,6 +2,23 @@
 
 GitLab-ready automation project for a reproducible WSL2 SOC/SOAR lab.
 
+## Product story
+
+SOCLab treats the lab as a product rather than a stack of tools: the goal is an understandable, reproducible, observable security workflow that can evolve toward governed AI assistance without claiming capabilities before evidence exists.
+
+```mermaid
+flowchart LR
+  Problem[Disconnected SOC tools and hidden integration contracts] --> Product[SOCLab: SOC as a Product]
+  Product --> Platform[Reproducible platform and health contracts]
+  Product --> Journey[Signal-to-action evidence journey]
+  Product --> Governance[CI, tests, security and architecture evidence]
+  Platform --> Outcome[Observable and progressively autonomous SOC workflow]
+  Journey --> Outcome
+  Governance --> Outcome
+```
+
+See [SOCLab Product Story](docs/product-story.md) for the user journey, current evidence boundary, and product evolution roadmap.
+
 ## Quick start
 
 ```bash
@@ -33,6 +50,7 @@ Normal CI runs only on GitLab-hosted runners:
 - secret safety scan
 - Bash syntax and ShellCheck
 - Bats unit/regression tests
+- architecture-impact validation and Mermaid diagram rendering
 - MkDocs documentation validation
 - GitLab Pages build from `main`
 

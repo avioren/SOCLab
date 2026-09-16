@@ -1,7 +1,8 @@
 site_name: SOC Lab - Wazuh 5 beta5 + Shuffle
-site_description: Reproducible WSL2 SOC/SOAR lab with health checks and GitLab CI
+site_description: SOCLab treats a reproducible SOC/SOAR lab as a testable security product with evidence-driven evolution.
 nav:
   - Home: index.md
+  - Product Story: product-story.md
   - Installation: installation.md
   - Operations & Healthcheck: operations.md
   - Architecture: architecture.md

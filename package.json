@@ -1,0 +1,11 @@
+{
+  "name": "soclab-architecture-docs",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "diagrams:render": "node scripts/render-diagrams.mjs"
+  },
+  "dependencies": {
+    "beautiful-mermaid": "1.1.3"
+  }
+}
