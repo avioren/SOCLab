@@ -1,0 +1,7 @@
+flowchart LR
+  Trigger[Trigger: known event - not evidenced] --> Detect[Detect: Wazuh - not evidenced]
+  Detect --> Route[Route: Shuffle - not evidenced]
+  Route --> Enrich[Enrich: context - not evidenced]
+  Enrich --> Decide[Decide: guarded action - roadmap]
+  Decide --> Respond[Respond: action outcome - not evidenced]
+  Respond --> Verify[Verify: runtime health implemented; scenario trace pending]

@@ -60,9 +60,26 @@ architecture_impact:
   script:
     - bash scripts/check-architecture-impact.sh
 
+render_diagrams:
+  image: node:22-alpine
+  stage: architecture
+  before_script:
+    - npm install --ignore-scripts --no-audit --no-fund
+  script:
+    - npm run diagrams:render
+  artifacts:
+    when: always
+    paths:
+      - docs/diagrams/generated/
+
 mkdocs_check:
   image: python:3.13-slim
   stage: docs
+  before_script:
+    - apt-get update -qq
+    - apt-get install -y --no-install-recommends nodejs npm
+    - npm install --ignore-scripts --no-audit --no-fund
+    - npm run diagrams:render
   script:
     - pip install --no-cache-dir mkdocs==1.6.1
     - mkdocs build --strict --site-dir public-check
@@ -70,15 +87,22 @@ mkdocs_check:
     when: always
     paths:
       - public-check/
+      - docs/diagrams/generated/
 
 pages:
   image: python:3.13-slim
   stage: docs
   rules:
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+  before_script:
+    - apt-get update -qq
+    - apt-get install -y --no-install-recommends nodejs npm
+    - npm install --ignore-scripts --no-audit --no-fund
+    - npm run diagrams:render
   script:
     - pip install --no-cache-dir mkdocs==1.6.1
     - mkdocs build --strict --site-dir public
   artifacts:
     paths:
       - public/
+      - docs/diagrams/generated/

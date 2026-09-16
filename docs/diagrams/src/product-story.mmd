@@ -1,0 +1,9 @@
+flowchart LR
+  Users[Users: SOC Analyst, SOC Lead, Security Engineer] --> Pain[Friction: disconnected tools, hidden contracts, fragile recovery, weak evidence]
+  Pain --> Product[SOCLab: SOC as a Product]
+  Product --> Platform[Reproducible platform: install, reset, health, contracts]
+  Product --> Journey[Evidence journey: signal to detection to orchestration to verified outcome]
+  Product --> Governance[Versioned product and architecture evidence: CI, tests, secret safety]
+  Platform --> Outcome[Outcome: understandable, reproducible, observable, progressively autonomous]
+  Journey --> Outcome
+  Governance --> Outcome
